@@ -55,7 +55,7 @@ check: ## Type-check the frontend
 # this needs neither a database nor a frontend build - which is what lets CI
 # check for drift in a job that has neither. Both outputs are committed; CI
 # fails if running this produces a diff.
-spec: ## Regenerate docs/openapi.json and the typed client from the routes
+spec: ## Regenerate docs/openapi.json and the API types from the routes
 	go run ./cmd/openapi
 	cd web && bun run gen:api
 
