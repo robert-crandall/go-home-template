@@ -9,6 +9,10 @@ APP_SLUG   ?= go-home-template
 
 .PHONY: help init setup build run dev test check clean
 
+# So a frontend build that fails halfway doesn't leave an index.html behind that
+# makes the target below look satisfied.
+.DELETE_ON_ERROR:
+
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-8s\033[0m %s\n", $$1, $$2}'

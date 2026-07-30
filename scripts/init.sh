@@ -23,25 +23,35 @@ cd "$(git rev-parse --show-toplevel)"
 # `make init` right after clicking "Use this template".
 module=${MODULE:-}
 if [ -z "$module" ]; then
-  origin=$(git remote get-url origin 2>/dev/null || true)
-  if [ -z "$origin" ]; then
+  module=$(git remote get-url origin 2>/dev/null || true)
+  if [ -z "$module" ]; then
     echo "no origin remote, so MODULE can't be inferred. Pass it: make init MODULE=github.com/you/thing" >&2
     exit 1
   fi
-  # https://host/owner/repo.git and git@host:owner/repo.git both become
-  # host/owner/repo, which is what a Go module path looks like.
-  module=${origin%.git}
-  module=${module#*://}
-  module=${module#*@}
-  module=${module/://}
 fi
 
+# https://host/owner/repo.git and git@host:owner/repo.git both become
+# host/owner/repo, which is what a Go module path looks like. This runs on an
+# explicit MODULE too, because pasting the repo URL you just copied from GitHub
+# is the obvious thing to do.
+module=${module%.git}
+module=${module%/}
+module=${module#*://}
+module=${module#*@}
+module=${module/://}
+
+# A module with no path element gives an empty slug, and an empty slug would
+# replace the old one with nothing everywhere - a silently gutted tree.
+slug=${module##*/}
 case "$module" in
   */*) ;;
   *) echo "MODULE must look like a Go module path, e.g. github.com/you/thing (got: $module)" >&2; exit 1 ;;
 esac
+if [ -z "$slug" ]; then
+  echo "MODULE has no repository name: $module" >&2
+  exit 1
+fi
 
-slug=${module##*/}
 name=${NAME:-$slug}
 
 if [ "$module" = "$old_module" ]; then

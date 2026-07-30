@@ -17,7 +17,7 @@ See [`docs/tech-stack.md`](docs/tech-stack.md) for why each piece was chosen.
 
 - Go 1.26+
 - Node 22+
-- Postgres 14+ — this repo doesn't run one for you. Point `DATABASE_URL` at
+- Postgres 14+ - this repo doesn't run one for you. Point `DATABASE_URL` at
   whatever you already have.
 
 ## Getting started
@@ -37,9 +37,12 @@ make init MODULE=github.com/you/thing NAME=Thing
 ```
 
 It rewrites the Go module path, the app title, and the binary name across every
-tracked text file, then fails loudly if any of the old identity survives. Run it
-before you write any code — it's a blanket find-and-replace, and it's much less
-interesting when there's only a template underneath it.
+tracked text file in one pass, then fails loudly if any of the old identity
+survives. (If your new name contains one of the old identifiers - `thing` inside
+`go-home-template-thing`, say - it says so and skips that one, because there's
+no way to tell a leftover from your own name.) Run it before you write any code:
+it's a blanket find-and-replace, and it's much less interesting when there's
+only a template underneath it.
 
 Edit `.env` (at minimum `DATABASE_URL`), create that database, then:
 
@@ -58,7 +61,7 @@ and `/healthz` to the Go binary on `:8080`. Cookies key on host rather than
 port, so a session set through the proxy comes back.
 
 Editing Go means restarting `make dev`. There's no file watcher for that on
-purpose — it's one keystroke, and a watcher is a whole extra thing to debug when
+purpose - it's one keystroke, and a watcher is a whole extra thing to debug when
 the dev loop misbehaves.
 
 Other targets: `make test` (Go tests), `make check` (frontend type check),
