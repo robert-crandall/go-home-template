@@ -478,8 +478,10 @@ code. A `concurrency` group on the publish workflow doesn't fix it either: by
 the time the stale run gets there the newer one is long done, so there's
 nothing left to be concurrent with.
 
-So publish is gated by a `guard` job that checks three things: the event was a
-push, CI passed, and the commit CI tested is *still* the branch tip. The guard
+So publish is gated by a `guard` job that checks three things about the CI run
+that triggered it: it was a push (`github.event.workflow_run.event`, not
+`github.event_name` - this workflow's own event is always `workflow_run`), CI
+passed, and the commit CI tested is *still* the branch tip. The guard
 always runs and emits the answer as an output; the build job carries
 `if: needs.guard.outputs.should_publish == 'true'`, so it's the *build* job
 that gets skipped on a stale commit. Skipped rather than exiting zero, because
