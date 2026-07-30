@@ -58,7 +58,7 @@ graph TD
 
 | Layer | Choice | Version at time of writing |
 |---|---|---|
-| Backend foundation | `go-home-server` | pinned, see "Foundation version" |
+| Backend foundation | `go-home-server` | >= v0.1.5 |
 | Language | Go | 1.26 |
 | HTTP | chi + huma (from the foundation) | - |
 | Database | Postgres, one instance | 16 |
@@ -85,8 +85,7 @@ thumbnails, web push, graceful shutdown, `/healthz`) comes in as a dependency.
 every app picks it up with `go get -u`. Vendoring the source into the template
 would break that on day one.
 
-**Pin the version carefully.** See "Foundation version" at the end; `@latest`
-is not necessarily new enough.
+**Minimum version: v0.1.5.** See "Foundation version" at the end.
 
 **Consequence:** the template must not reimplement anything the foundation
 offers. If a template app needs different auth behavior, the fix goes upstream.
@@ -638,25 +637,17 @@ Accepted here:
 
 ## Foundation version
 
-The template needs `auth.Service.TokenHumaConfig` (v0.1.4) and the `apisec`
-package ([#34], merged but untagged at the time of writing), so `go.mod` reads:
+**This template requires `go-home-server` v0.1.5 or later.** Not a soft
+preference: `auth.Service.TokenHumaConfig` landed in v0.1.4 and `RegisterTokens`
+panics without it, and the `apisec` package landed in v0.1.5, so the wiring in
+D3 and D11 won't compile or boot against anything earlier.
 
-```
-github.com/robert-crandall/go-home-server v0.1.5-0.20260730143552-9721cc10617b
-```
-
-Note that `@latest` resolves to v0.1.4 and does **not** have `apisec`, so the
-pin has to be explicit. Once a release after v0.1.4 is tagged, replace the
-pseudo-version with the tag; nothing else changes, and Dependabot should offer
-the bump on its own (D9).
-
-The upstream work behind those two versions came out of writing this document's
-first draft against v0.1.3, which turned up ten things that belonged there
-rather than worked around here. What the document absorbed:
-D3 (the spec describes authentication now, token wiring is a two-part pairing,
-and app routes declare security through `apisec`), D4 (the cache-prefix mismatch
-is gone and the `fs.Sub` mistake is a boot panic), D7 and the threat model (both
-cite upstream rather than assert), and D11.
+That work came out of writing this document's first draft against v0.1.3, which
+turned up ten things that belonged upstream rather than worked around here. What
+the document absorbed: D3 (the spec describes authentication now, token wiring
+is a two-part pairing, and app routes declare security through `apisec`), D4
+(the cache-prefix mismatch is gone and the `fs.Sub` mistake is a boot panic), D7
+and the threat model (both cite upstream rather than assert), and D11.
 
 [#33]: https://github.com/robert-crandall/go-home-server/issues/33
 [#34]: https://github.com/robert-crandall/go-home-server/pull/34
