@@ -75,8 +75,10 @@ the config you were actually running. `.worktreeinclude` lists the ignored files
 a new worktree should inherit from the main checkout, and `.env` is on it. Add
 anything else your app keeps outside git and expects to be there.
 
-This is only read by tooling that looks for it; plain `git worktree add` ignores
-the file, so a setup that doesn't use it loses nothing.
+Nothing in this repo reads `.worktreeinclude` - it's a manifest for external
+worktree tooling that looks for one. Plain `git worktree add` ignores it, so if
+your setup doesn't use such tooling, copy `.env` across by hand and the file
+costs you nothing.
 
 ## The build order
 
