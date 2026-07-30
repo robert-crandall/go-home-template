@@ -95,3 +95,63 @@ jobs:
         run: |
           git diff --exit-code -- docs/openapi.json web/src/lib/api/schema.d.ts \
             || { echo "::error::the API contract changed - run \`make spec\` and commit docs/openapi.json + web/src/lib/api/schema.d.ts"; exit 1; }
+
+  # The only job that runs the thing we actually ship: one binary with the SPA
+  # embedded in it, a real Chromium, and a real Postgres. Every other job checks
+  # a piece.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: web
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: go-home-template_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      E2E_POSTGRES_URL: postgres://postgres:postgres@127.0.0.1:5432
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          cache-dependency-path: go.sum
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.x'
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-build
+          path: web/build
+      # The artifact is web/build only - Playwright and its config live in
+      # node_modules, so this has to come before e2e:install.
+      - run: bun install --frozen-lockfile
+        working-directory: web
+      - run: bun run e2e:install
+        working-directory: web
+      # The web job already built and uploaded this exact SPA; rebuilding it
+      # would only test that the build is deterministic, which is not this job's
+      # question.
+      - run: make e2e
+        env:
+          E2E_REUSE_WEB_BUILD: '1'
+      # Pinned against the always-present `postgres` database rather than the
+      # e2e one, so it can't race the browser suite's schema reset.
+      - name: Pin the auth refusal strings against a real database
+        run: go test ./internal/app/ -run TestAuthRefusalStrings -v
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7

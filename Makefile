@@ -7,7 +7,7 @@ APP_MODULE ?= github.com/robert-crandall/go-home-template
 APP_NAME   ?= Go Home Template
 APP_SLUG   ?= go-home-template
 
-.PHONY: help init setup build run dev test check spec clean
+.PHONY: help init setup build run dev test check spec e2e clean
 
 # So a frontend build that fails halfway doesn't leave an index.html behind that
 # makes the target below look satisfied.
@@ -58,6 +58,12 @@ check: ## Type-check the frontend
 spec: ## Regenerate docs/openapi.json and the API types from the routes
 	go run ./cmd/openapi
 	cd web && bun run gen:api
+
+# Drives a real Chromium against the real binary and a real Postgres - the same
+# cmd/server that ships, with the SPA embedded in it. Needs a `$(APP_SLUG)_e2e`
+# database to exist; the script resets its schema on every run.
+e2e: ## Run the browser tests against the real binary
+	@scripts/e2e.sh
 
 clean: ## Remove build output
 	rm -rf bin .bin web/build web/.svelte-kit
