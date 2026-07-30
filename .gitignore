@@ -1,0 +1,10 @@
+# Build output
+/bin/
+/.bin/
+/web/build/
+/web/.svelte-kit/
+/web/node_modules/
+
+# Local runtime state
+/.env
+/uploads/
