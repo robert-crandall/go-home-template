@@ -291,7 +291,10 @@ scripts, and executes JavaScript, instead of a Node install plus npm. Vite still
 bundles - `bun build` is Bun's own bundler and is not in play here, and neither
 is `bun test`. This is a toolchain swap, not a rewrite. Dependabot supports
 `package-ecosystem: bun` for version updates (Bun >= 1.1.39), so nothing is lost
-on the maintenance side either.
+on the maintenance side either. The version is pinned in one place per surface
+and both track the same minor: `bun-version: '1.3.x'` in CI, `oven/bun:1.3-alpine`
+in the Docker builder. That's a floating patch line, not an exact pin - Dependabot
+moves the minor when it's time.
 
 **One non-obvious consequence, and it's why `web/bunfig.toml` exists.** `vite`,
 `svelte-kit`, and `svelte-check` are all installed with a `#!/usr/bin/env node`
@@ -395,8 +398,8 @@ reverse proxy on the host). The container speaks plain HTTP.
 ### D8 - Multi-stage Docker build to distroless
 
 ```
-web-build   --platform=$BUILDPLATFORM  oven/bun:1-alpine  bun install --frozen-lockfile && bun run build
-go-build    --platform=$BUILDPLATFORM  golang:1.26        CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build
+web-build   --platform=$BUILDPLATFORM  oven/bun:1.3-alpine  bun install --frozen-lockfile && bun run build
+go-build    --platform=$BUILDPLATFORM  golang:1.26          CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build
 runtime                                distroless/static-debian12:nonroot
 ```
 
@@ -456,9 +459,9 @@ job that doesn't gate the graph doesn't gate a deploy either:
 
 | Job | Needs | What it runs |
 |---|---|---|
-| `web` | - | `bun install --frozen-lockfile`, `svelte-check`, `eslint`, `vitest run`, `bun run build`, upload `web/build` |
+| `web` | - | `bun install --frozen-lockfile`, then `bun run check` (svelte-check), `bun run lint` (eslint), `bun run test` (vitest), `bun run build`, upload `web/build` |
 | `go` | `web` | download artifact, then `go build ./... && go vet ./... && go test ./...` |
-| `spec` | - | `go run ./cmd/openapi`, `bun install --frozen-lockfile` + `openapi-typescript`, fail on diff |
+| `spec` | - | `go run ./cmd/openapi`, `bun install --frozen-lockfile` + `bunx --bun openapi-typescript`, fail on diff |
 | `e2e` | `web` | download artifact, build the real binary, run it against Postgres, run Playwright |
 | `docker-build` | - | `docker buildx build` for amd64 + arm64, cache output only. PRs stop here |
 
