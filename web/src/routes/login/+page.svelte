@@ -41,21 +41,25 @@
   <div class="hero-content w-full max-w-sm">
     <div class="card w-full bg-base-200 shadow-xl">
       <div class="card-body">
-        <div role="tablist" class="tabs tabs-box mb-2">
+        <!--
+          These look like daisyUI tabs but they are not tabs: there is one form
+          below, not a panel per tab. Real tab roles would promise arrow-key
+          navigation and aria-controls that do not exist here, which is worse
+          for a screen reader than no ARIA at all. Two buttons, aria-pressed.
+        -->
+        <div class="tabs tabs-box mb-2" role="group" aria-label="Log in or register">
           <button
             type="button"
-            role="tab"
             class="tab"
             class:tab-active={mode === 'login'}
-            aria-selected={mode === 'login'}
+            aria-pressed={mode === 'login'}
             onclick={() => switchTo('login')}>Log in</button
           >
           <button
             type="button"
-            role="tab"
             class="tab"
             class:tab-active={mode === 'register'}
-            aria-selected={mode === 'register'}
+            aria-pressed={mode === 'register'}
             onclick={() => switchTo('register')}>Register</button
           >
         </div>

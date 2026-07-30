@@ -19,11 +19,20 @@ const PASSWORD = 'correct-horse-battery';
 const greeting = (page: Page) => page.getByRole('heading', { name: 'Hello' });
 const alert = (page: Page) => page.getByRole('alert');
 
+// In login mode the toggle and the submit button are both named "Log in",
+// so both lookups are scoped rather than reaching for .first().
+const modeToggle = (page: Page) => page.getByRole('group', { name: 'Log in or register' });
+const credentialsForm = (page: Page) => page.locator('form');
+
 async function submitCredentials(page: Page, tab: 'Log in' | 'Register', password: string) {
-  await page.getByRole('tab', { name: tab }).click();
+  const toggle = modeToggle(page).getByRole('button', { name: tab, exact: true });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   await page.getByLabel('Email').fill(EMAIL);
   await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: tab === 'Log in' ? 'Log in' : 'Create account' }).click();
+  await credentialsForm(page)
+    .getByRole('button', { name: tab === 'Log in' ? 'Log in' : 'Create account' })
+    .click();
 }
 
 test('register, stay signed in across reloads, log out, and log back in', async ({ page }) => {
@@ -107,7 +116,7 @@ test('register, stay signed in across reloads, log out, and log back in', async 
   });
 
   await test.step('a second registration is refused, in the server’s words', async () => {
-    await page.getByRole('tab', { name: 'Register' }).click();
+    await modeToggle(page).getByRole('button', { name: 'Register', exact: true }).click();
     await page.getByLabel('Email').fill('second@example.com');
     await page.getByLabel('Password').fill(PASSWORD);
     await page.getByRole('button', { name: 'Create account' }).click();
