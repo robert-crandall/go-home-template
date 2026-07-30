@@ -23,7 +23,7 @@ deliberately *only* a Go module, because that is the part that can physically be
 an imported dependency and pick up fixes with `go get -u`.
 
 Everything that can't be imported lives here: the Svelte SPA, the Vite/Tailwind
-config, the Dockerfile, the compose file, and the CI/CD workflows. Those get
+config, the Dockerfile, and the CI/CD workflows. Those get
 copied once per app and then diverge, which is exactly why they belong in a
 template rather than a library.
 
@@ -69,7 +69,8 @@ graph TD
 | API client | `openapi-typescript` + `openapi-fetch` | 7.x / 0.17.x |
 | Packaging | one static binary, SPA embedded | - |
 | Container | multi-stage build to distroless | - |
-| Orchestration | Docker Compose | - |
+| Orchestration | Docker Compose, on the host - not in this repo | - |
+| Deployment | GHCR + Watchtower | - |
 | CI/CD | GitHub Actions + Dependabot + auto-merge | - |
 
 ## Decisions
@@ -397,21 +398,29 @@ migration work; it takes the **port** from `ADDR` and always dials
 or `[::]:8080`, none of which are dialable as-is; and the Dockerfile uses
 exec-form `HEALTHCHECK` because there's no shell to parse the string form.
 
-**Compose** runs the app, Postgres 16 with a named volume, and a bind mount for
-`UPLOAD_DIR`. Both services get `restart: unless-stopped`, so a host reboot or a
-crash-looping first boot recovers without me. Two things that will otherwise
-break on a first `docker compose up`:
+**No compose file ships here.** This was in the template originally and came
+back out: the working app on this exact deploy model doesn't have one. Local
+development runs the binary against a Postgres already on the box, and the
+production compose file lives on the host next to everything else that host
+runs. A compose file in the repo would be a fourth copy to keep in sync with
+three real ones, and `make init` would have to rename a service in it.
 
-- `db.Migrate` has no connection retry, so the app must wait on
-  `condition: service_healthy` against a real Postgres healthcheck, not just
-  `depends_on`.
-- `distroless:nonroot` runs as UID 65532, and a Compose-created bind mount is
-  root-owned on a Linux host. `files.NewService` write-probes `UPLOAD_DIR` and
-  refuses to start if it can't write, so the host directory has to exist and be
-  **writable by** UID 65532. Ownership is the simplest way to get there
-  (`chown 65532:65532`) but group permissions or an ACL work too, and on Docker
-  Desktop or rootless Docker the mapping differs and it may need nothing at all.
-  The README's setup step does the Linux case and says why.
+What survives is the knowledge, as a README snippet the host operator copies
+once. Two things in it are not obvious and are the reason it's written down at
+all:
+
+- `db.Migrate` has no connection retry, so the app exits if Postgres isn't
+  accepting connections yet. On the host that means `condition: service_healthy`
+  against a real Postgres healthcheck, or a restart policy that tolerates a few
+  crash-loops on reboot. The template can't choose this for you because it
+  doesn't know whether Postgres is even a container on your box.
+- `distroless:nonroot` runs as UID 65532, and if Docker has to create a missing
+  bind-mount source on Linux it creates it root-owned. `files.NewService`
+  write-probes `UPLOAD_DIR` and refuses to start if it can't write, so the host
+  directory has to exist and be **writable by** UID 65532. Ownership is the
+  simplest way there (`chown 65532:65532`) but group permissions or an ACL work
+  too, and on Docker Desktop or rootless Docker the mapping differs and it may
+  need nothing at all.
 
 That refusal is a feature, not an obstacle: it means a missing or unwritable
 volume is a startup crash instead of photos written into a container layer that
@@ -420,7 +429,8 @@ the next deploy discards.
 ### D9 - CI, CD, and Dependabot
 
 CI on every PR and push to main. The job graph matters because of the embed
-described in D4, and because nothing should be publishable before it's tested:
+described in D4, and because publishing keys off CI's overall conclusion, so a
+job that doesn't gate the graph doesn't gate a deploy either:
 
 | Job | Needs | What it runs |
 |---|---|---|
@@ -429,17 +439,17 @@ described in D4, and because nothing should be publishable before it's tested:
 | `spec` | - | `go run ./cmd/openapi`, `npm ci` + `openapi-typescript`, fail on diff |
 | `e2e` | `web` | download artifact, build the real binary, run it against Postgres, run Playwright |
 | `docker-build` | - | `docker buildx build` for amd64 + arm64, cache output only. PRs stop here |
-| `publish` | `go`, `spec`, `e2e` | main and tags only: build both platforms and push to GHCR |
+
+Publish is deliberately *not* in this graph; it's a separate workflow, below.
 
 `spec` needs no artifact: `go run ./cmd/openapi` only compiles `cmd/openapi` and
 its imports, and `web/dist.go` isn't one of them. `go build ./...` in the `go`
 job does compile it, which is why that job needs the artifact.
 
-`docker-build` and `publish` are separate jobs rather than one job with an `if`,
-because a multi-platform `buildx` result can't be `--load`ed into the local
-daemon. The PR job therefore builds to cache and asserts only that the
-Dockerfile still works, while `publish` builds and pushes in one step after the
-tests that actually mean something have passed.
+`docker-build` builds to cache and asserts only that the Dockerfile still works.
+It can't `--load` its result into the local daemon, because a multi-platform
+`buildx` result isn't loadable - so there's nothing to hand downstream even if
+publishing lived here.
 
 The E2E spec is one flow: register the first user, land on hello world, toggle
 the theme, log out, log back in. It is the only test that exercises the embedded
@@ -458,9 +468,49 @@ Two notes on the details:
   from this template publishes under its own name without anyone editing a
   workflow.
 
-`publish` tags the image `:main`, `:<sha>`, and `:v1.2.3`. Deployment is
-`docker compose pull && docker compose up -d` on the host; I'm not putting a
-deploy key in GitHub Actions for a homelab box.
+**Publishing is its own `workflow_run` workflow, triggered by CI completing.**
+It's separate mostly so the guard below can be a real job, but the thing worth
+writing down is a race that exists either way: publish work starts when the CI
+run that validated a commit *finishes*, and CI completion order is not push
+order. Merge two PRs a few minutes apart, let the first one's CI be slow, and
+the older commit publishes last - quietly moving `:main` backwards onto older
+code. A `concurrency` group on the publish workflow doesn't fix it either: by
+the time the stale run gets there the newer one is long done, so there's
+nothing left to be concurrent with.
+
+So publish is gated by a `guard` job that checks three things about the CI run
+that triggered it: it was a push (`github.event.workflow_run.event`, not
+`github.event_name` - this workflow's own event is always `workflow_run`), CI
+passed, and the commit CI tested is *still* the branch tip. The guard
+always runs and emits the answer as an output; the build job carries
+`if: needs.guard.outputs.should_publish == 'true'`, so it's the *build* job
+that gets skipped on a stale commit. Skipped rather than exiting zero, because
+the notification below keys off that job's conclusion, and a job that
+"succeeded" without pushing an image would tell the homelab to redeploy
+something it already has.
+
+`publish` tags the image `:main`, `:<sha>`, and `:v1.2.3`, and builds from the
+sha CI validated rather than whatever the branch tip is by then. That means
+checking out `github.event.workflow_run.head_sha` - in a `workflow_run`
+workflow `github.sha` is the default branch, not the commit that triggered you,
+which is a quiet way to publish the wrong code. Deployment is Watchtower on the
+host, watching the mutable tag; I'm not putting a deploy key in GitHub Actions
+for a homelab box.
+
+**Notifications** are a third workflow, fanning out from the other two, and both
+halves are opt-in - unset the secret and they no-op, so a fork isn't broken by
+secrets it doesn't have:
+
+- Slack, when CI fails on a **push** to main. Not on pull requests, not on
+  cancellations, and not on success. A notification that fires when things are
+  fine is a notification you learn to ignore.
+- A Watchtower webhook, after an image was really published. It reads the
+  *job* conclusion via `gh api .../jobs`, not the workflow's, because a guarded
+  publish leaves a green wrapper behind - and then waits a beat for the registry
+  to settle before pinging, since Watchtower pulls immediately.
+
+The two jobs get their secrets scoped separately, so the third-party Slack
+action never sees the webhook that can trigger a deploy.
 
 Dependabot covers four ecosystems weekly: `gomod` (`/`), `npm` (`/web`),
 `github-actions` (`/`), and `docker` (`/`). Minor and patch updates are grouped
@@ -477,9 +527,12 @@ covers auth and the SPA shell but not files, push, tokens, or MCP. That's an
 accepted risk with one caveat worth stating plainly: **rolling back the GHCR tag
 does not roll back the database.** Startup runs goose `Up` only, so a foundation
 release carrying a migration has already changed the schema by the time you
-notice. Recovering from that needs a database restore, which is one more reason
-the backup story below is not optional. If a repo built from this template ever
-holds data I'd be sad to restore from last night's dump, gate majors first.
+notice - and with Watchtower on a mutable tag, that can happen while you're
+asleep. Recovering means restoring Postgres, which this template does not do for
+you. So the default has a precondition rather than a mitigation: **auto-merging
+majors assumes you already keep external, tested backups of both Postgres and
+`UPLOAD_DIR`.** If a repo built from this template doesn't, the fix is to change
+the default and gate majors, not to hope.
 
 **Why `workflow_run` auto-merge instead of branch protection plus native
 auto-merge:** native auto-merge needs a required-status-check blocker on main,
@@ -498,7 +551,7 @@ module path.
 So the template ships `make init MODULE=github.com/owner/repo NAME=my-app`,
 defaulting `MODULE` from the `origin` remote so the usual case is just
 `make init`. It runs `go mod edit -module`, rewrites internal imports, and
-updates the app title, binary name, compose service name, npm package name, and
+updates the app title, binary name, npm package name, and
 the PWA manifest.
 
 Two constraints on its design:
@@ -572,17 +625,21 @@ required ones filled in for local development.
 The parts that make this a deployable app rather than a demo, and that a
 homelab template gets wrong by omission more often than by design:
 
-- **Backups.** Two things to back up and they're easy to get half right: a
-  `pg_dump` of Postgres *and* the `UPLOAD_DIR` tree, because file bytes live on
-  disk and only their metadata is in the database. A restore of one without the
-  other leaves rows pointing at missing files or orphaned files nobody can
-  reach. The template ships `make backup` / `make restore` doing both together,
-  and the README says to test the restore once rather than assume it.
+- **Backups.** Not in this template - I back up Postgres with the same thing
+  that backs up everything else on the box, and a `make backup` here would be a
+  worse copy of it. What the template owes you is the part that's easy to get
+  half right: there are **two** things to back up, a `pg_dump` of Postgres *and*
+  the `UPLOAD_DIR` tree, because file bytes live on disk and only their metadata
+  is in the database. Restore one without the other and you get rows pointing at
+  missing files, or orphaned files nobody can reach. Test the restore once
+  rather than assuming it, especially before turning on major auto-merge - see
+  D9.
 - **Pulling the image.** GHCR packages are private by default, so the homelab
   host needs either `docker login ghcr.io` with a read-only PAT or the package
   set to public. The README covers both; pick one at setup time, not at 2am
   during a deploy.
-- **Restarts.** `restart: unless-stopped` on both compose services, per D8.
+- **Restarts.** `restart: unless-stopped` in the host's compose file, which also
+  covers the case in D8 where the app exits because Postgres wasn't up yet.
 - **Uptime.** `/healthz` returns 503 when the database ping fails, so point
   whatever you already run at it. The foundation gives this away for free as
   long as `server.Options.HealthCheck` is set to `pool.Ping`.
