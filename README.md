@@ -16,7 +16,7 @@ See [`docs/tech-stack.md`](docs/tech-stack.md) for why each piece was chosen.
 ## Prerequisites
 
 - Go 1.26+
-- Node 22+
+- Bun 1.3+ - the frontend toolchain. Node is not required.
 - Postgres 14+ - this repo doesn't run one for you. Point `DATABASE_URL` at
   whatever you already have.
 

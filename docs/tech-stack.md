@@ -65,6 +65,7 @@ graph TD
 | Migrations | goose, via `db.Migrate` | - |
 | Frontend | Svelte + SvelteKit, `adapter-static` in SPA mode | 5.x / 2.x / 3.x |
 | Build tool | Vite | 8.x |
+| Package manager | Bun - no Node required | 1.3.x |
 | Styling | Tailwind CSS + daisyUI | 4.x / 5.x |
 | API client | `openapi-typescript` + `openapi-fetch` | 7.x / 0.17.x |
 | Packaging | one static binary, SPA embedded | - |
@@ -263,7 +264,7 @@ checkout** until the frontend has been built at least once, because the embed
 pattern matches nothing. That is not a bug to work around by committing the
 bundle. It is a build graph, and it has to be respected everywhere:
 
-- `make build` runs `npm run build` before `go build`. `make setup` does it once
+- `make build` runs `bun run build` before `go build`. `make setup` does it once
   after clone, and the README's first instruction is `make setup`.
 - CI runs the `web` job first and passes `web/build` to the Go, e2e, and Docker
   jobs as an artifact (D9).
@@ -283,6 +284,27 @@ server on 8080. Cookies are keyed by host and not by port, so the session cookie
 set by `localhost:8080` through the proxy is sent back by the page on
 `localhost:5173`. `APP_ENV=development` leaves `Secure` off, so it works over
 plain HTTP.
+
+**Why Bun and not npm:** the prerequisite list is Go, Postgres, and one more
+thing. Bun makes that one thing a single ~50MB binary that installs, runs
+scripts, and executes JavaScript, instead of a Node install plus npm. Vite still
+bundles - `bun build` is Bun's own bundler and is not in play here, and neither
+is `bun test`. This is a toolchain swap, not a rewrite. Dependabot supports
+`package-ecosystem: bun` for version updates (Bun >= 1.1.39), so nothing is lost
+on the maintenance side either.
+
+**One non-obvious consequence, and it's why `web/bunfig.toml` exists.** `vite`,
+`svelte-kit`, and `svelte-check` are all installed with a `#!/usr/bin/env node`
+shebang, and `bun run` respects that shebang by default - it only aliases `node`
+to itself when `node` is *absent* from `$PATH`. Left alone, that means the same
+`bun run build` builds under Node on a machine that has Node (a dev laptop, and
+every GitHub runner, which ships Node preinstalled) and under Bun on the clean
+clone this template is designed for. Two runtimes for one command, chosen by an
+invisible property of the host, with CI exercising the one the template does not
+require. `bunfig.toml` sets `[run] bun = true`, so there is one runtime
+everywhere and CI tests the one a fresh clone gets. The trade is real and worth
+naming: Vite under Bun is a less-travelled path than Vite under Node. Running it
+on every PR is the mitigation.
 
 ### D5 - Tailwind CSS 4 and daisyUI 5 for theming
 
@@ -373,8 +395,8 @@ reverse proxy on the host). The container speaks plain HTTP.
 ### D8 - Multi-stage Docker build to distroless
 
 ```
-web-build   --platform=$BUILDPLATFORM  node:22-alpine  npm ci && npm run build
-go-build    --platform=$BUILDPLATFORM  golang:1.26     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build
+web-build   --platform=$BUILDPLATFORM  oven/bun:1-alpine  bun install --frozen-lockfile && bun run build
+go-build    --platform=$BUILDPLATFORM  golang:1.26        CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build
 runtime                                distroless/static-debian12:nonroot
 ```
 
@@ -434,9 +456,9 @@ job that doesn't gate the graph doesn't gate a deploy either:
 
 | Job | Needs | What it runs |
 |---|---|---|
-| `web` | - | `npm ci`, `svelte-check`, `eslint`, `vitest run`, `npm run build`, upload `web/build` |
+| `web` | - | `bun install --frozen-lockfile`, `svelte-check`, `eslint`, `vitest run`, `bun run build`, upload `web/build` |
 | `go` | `web` | download artifact, then `go build ./... && go vet ./... && go test ./...` |
-| `spec` | - | `go run ./cmd/openapi`, `npm ci` + `openapi-typescript`, fail on diff |
+| `spec` | - | `go run ./cmd/openapi`, `bun install --frozen-lockfile` + `openapi-typescript`, fail on diff |
 | `e2e` | `web` | download artifact, build the real binary, run it against Postgres, run Playwright |
 | `docker-build` | - | `docker buildx build` for amd64 + arm64, cache output only. PRs stop here |
 
@@ -512,7 +534,7 @@ secrets it doesn't have:
 The two jobs get their secrets scoped separately, so the third-party Slack
 action never sees the webhook that can trigger a deploy.
 
-Dependabot covers four ecosystems weekly: `gomod` (`/`), `npm` (`/web`),
+Dependabot covers four ecosystems weekly: `gomod` (`/`), `bun` (`/web`),
 `github-actions` (`/`), and `docker` (`/`). Minor and patch updates are grouped
 into one PR per ecosystem; majors come as standalone PRs so they're at least
 legible.
@@ -551,7 +573,7 @@ module path.
 So the template ships `make init MODULE=github.com/owner/repo NAME=my-app`,
 defaulting `MODULE` from the `origin` remote so the usual case is just
 `make init`. It runs `go mod edit -module`, rewrites internal imports, and
-updates the app title, binary name, npm package name, and
+updates the app title, binary name, `package.json` name, and
 the PWA manifest.
 
 Two constraints on its design:
