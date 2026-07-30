@@ -472,6 +472,16 @@ Publish is deliberately *not* in this graph; it's a separate workflow, below.
 its imports, and `web/dist.go` isn't one of them. `go build ./...` in the `go`
 job does compile it, which is why that job needs the artifact.
 
+The `bun run` forms in that table are load-bearing, not stylistic. Every one of
+those tools is a `node`-shebanged binary in `node_modules/.bin`, so invoking it
+bare reintroduces exactly the host-picks-the-runtime problem D4's `bunfig.toml`
+exists to kill. `bun run gen:api` in particular is a `package.json` script rather
+than `bunx openapi-typescript`, because `bunx` will happily fetch the latest
+version from the registry when the package isn't installed - and D3 pins that
+version precisely so `schema.d.ts` is pinned too. Those scripts arrive with the
+milestones that add eslint, vitest, and spec generation; this table is the
+contract they have to satisfy.
+
 `docker-build` builds to cache and asserts only that the Dockerfile still works.
 It can't `--load` its result into the local daemon, because a multi-platform
 `buildx` result isn't loadable - so there's nothing to hand downstream even if
