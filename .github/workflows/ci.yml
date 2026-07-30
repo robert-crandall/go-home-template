@@ -23,9 +23,15 @@ jobs:
       # would go untested. A missing, misplaced, or typo'd bunfig is silent:
       # Bun reports no error, it just falls back to Node. Assert the shim that
       # shebang resolves through is actually Bun, before anything else runs.
+      #
+      # The `command -v node` line is part of the evidence, not decoration: Bun
+      # aliases `node` to itself automatically when Node is absent, so on a
+      # Node-free host this assertion would pass no matter what bunfig says.
+      # Printing where Node is shows the check had something to prove.
       - name: Assert bunfig.toml forces the Bun runtime
         working-directory: web
         run: |
+          echo "node on PATH: $(command -v node || echo '(none - assertion is weaker here)')"
           runtime=$(bun run --silent node -p "typeof Bun === 'undefined' ? 'NODE' : 'BUN'")
           echo "bun run resolves node -> $runtime"
           [ "$runtime" = BUN ] || { echo "::error file=web/bunfig.toml::bun run built under $runtime, not Bun - web/bunfig.toml is not in force"; exit 1; }

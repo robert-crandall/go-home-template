@@ -500,7 +500,10 @@ Node" detector - a future tool that hardcodes an absolute Node path, scrubs
 `$PATH`, or spawns its own interpreter would slip past it, and would need its
 own check. It also has to be a `bun run` of a *command*, not of a file path:
 `bun run ./some-file.mjs` uses Bun's runtime regardless of `bunfig.toml`, so
-writing the check that way yields an assertion that can never fail.
+writing the check that way yields an assertion that can never fail. For the same
+reason the step logs where `node` is: Bun aliases `node` to itself when Node is
+absent, so on a Node-free runner the assertion would pass whatever `bunfig.toml`
+said. Printing the path keeps the evidence honest about what was proved.
 
 `docker-build` builds to cache and asserts only that the Dockerfile still works.
 It can't `--load` its result into the local daemon, because a multi-platform
