@@ -3,7 +3,8 @@
 // serves that API alongside the embedded SPA on a single port.
 //
 // It starts life as a copy of go-home-server's examples/minimal/main.go, with
-// the SPA wired in. Add your own migrations and routes here.
+// the SPA wired in. Routes live in internal/app so cmd/openapi can generate the
+// committed spec from the same registration - add your own there.
 package main
 
 import (
@@ -19,6 +20,7 @@ import (
 	"github.com/robert-crandall/go-home-server/notify"
 	"github.com/robert-crandall/go-home-server/server"
 
+	"github.com/robert-crandall/go-home-template/internal/app"
 	"github.com/robert-crandall/go-home-template/web"
 )
 
@@ -72,8 +74,8 @@ func main() {
 	}
 
 	srv := server.New(server.Options{
-		Title:       "Go Home Template",
-		Version:     "1.0.0",
+		Title:       app.Title,
+		Version:     app.Version,
 		Addr:        cfg.Addr,
 		SPA:         web.Dist,
 		Middlewares: []func(http.Handler) http.Handler{authSvc.Middleware},
@@ -81,15 +83,13 @@ func main() {
 		HumaConfig:  authSvc.TokenHumaConfig,
 	})
 
-	// Register the foundation's operations on the shared huma API.
-	authSvc.Register(srv.API)
-	authSvc.RegisterTokens(srv.API) // /api/tokens + bearer auth for scripts/MCP
-	currentUser := func(ctx context.Context) (int64, error) {
-		u, err := auth.RequireUser(ctx)
-		return u.ID, err
-	}
-	notify.Register(srv.API, notifySvc, currentUser)
-	files.Register(srv.API, filesSvc, currentUser)
+	// Shared with cmd/openapi, so the committed spec always describes the routes
+	// this binary actually serves.
+	app.RegisterRoutes(srv.API, app.Deps{
+		Auth:   authSvc,
+		Notify: notifySvc,
+		Files:  filesSvc,
+	})
 
 	log.Printf("listening on %s (env=%s)", cfg.Addr, cfg.Env)
 	if err := srv.Run(ctx); err != nil {

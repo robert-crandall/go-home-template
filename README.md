@@ -65,7 +65,7 @@ purpose - it's one keystroke, and a watcher is a whole extra thing to debug when
 the dev loop misbehaves.
 
 Other targets: `make test` (Go tests), `make check` (frontend type check),
-`make clean`, and `make help`.
+`make spec` (regenerate the API contract), `make clean`, and `make help`.
 
 ### Git worktrees
 
@@ -100,6 +100,46 @@ Two things follow from that, and both bite eventually:
   hashed chunk (`_app/immutable/...`). You get a binary that boots, serves the
   HTML shell, and 404s every script. `web/dist_test.go` checks for those chunks
   so the failure is a red test rather than a confusing afternoon.
+
+## The API contract
+
+Routes are registered in one place, `internal/app/routes.go`:
+
+```go
+func RegisterRoutes(api huma.API, deps Deps) { ... }
+```
+
+`cmd/server` and `cmd/openapi` are both thin callers of it, which is what keeps
+the committed contract honest. Two files are generated and committed:
+
+| File | What it is |
+| --- | --- |
+| `docs/openapi.json` | the OpenAPI document, straight from the registered routes |
+| `web/src/lib/api/schema.d.ts` | TypeScript types generated from that document |
+
+The loop when you add or change a route:
+
+```sh
+make spec      # regenerate both, then commit them
+```
+
+CI's `spec` job runs the same command and fails if it produces a diff, so a
+route change that skips the regeneration is a red build rather than a frontend
+that type-checks against a contract the server stopped honoring.
+
+Two things about that job are deliberate. It has **no `DATABASE_URL`** and it
+does **not** wait for the frontend build: `cmd/openapi` imports `internal/app`
+and never `web`, and `RegisterRoutes` only describes routes, so the generator
+runs against nil database pools. If a route handler ever gets called during
+registration, it panics on that nil pool - a loud failure in the one place
+that's cheap to debug. `internal/app/spec_test.go` covers the same ground
+locally, and additionally asserts that two consecutive generations are
+byte-identical, because a drift check is only fair if generation is
+deterministic.
+
+`openapi-typescript` is pinned to an exact version (no caret) for the same
+reason: a patch bump that reformats its output would otherwise show up as
+mystery drift on an unrelated pull request.
 
 ## Adding your first migration
 
