@@ -1,0 +1,9 @@
+@import 'tailwindcss';
+
+/* daisyUI is loaded as a Tailwind plugin from here, so there is no
+   tailwind.config.js. Use semantic colors only (bg-base-100, text-base-content,
+   btn-primary): a hardcoded bg-white survives the theme switch and looks broken
+   in dark mode. Theme switching itself lands in M3. */
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
+}
