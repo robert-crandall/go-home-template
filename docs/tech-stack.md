@@ -267,7 +267,7 @@ bundle. It is a build graph, and it has to be respected everywhere:
 - `make build` runs `bun run build` before `go build`. `make setup` does it once
   after clone, and the README's first instruction is `make setup`.
 - CI makes the `go` and `e2e` jobs depend on `web` and passes `web/build` to
-  them as an artifact. M3's `docker-build` job won't need it - the Dockerfile's own
+  them as an artifact. M4's `docker-build` job won't need it - the Dockerfile's own
   `web-build` stage runs the same build inside the image (D8, D9).
 - `web/build/` is gitignored. Nothing generated is committed except
   `docs/openapi.json` and `schema.d.ts`, which are reviewable text.
@@ -510,7 +510,7 @@ CI on every PR and push to main. The job graph matters because of the embed
 described in D4, and because publishing keys off CI's overall conclusion, so a
 job that doesn't gate the graph doesn't gate a deploy either. As of M2 the first
 four jobs exist and the "what it runs" column describes them as they are;
-`docker-build` is the design M3's containerization has to satisfy, and the
+`docker-build` is the design M4's containerization has to satisfy, and the
 publish, notification and Dependabot workflows below are likewise not written
 yet:
 
