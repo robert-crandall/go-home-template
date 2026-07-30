@@ -5,6 +5,10 @@
 /web/.svelte-kit/
 /web/node_modules/
 
+# Playwright
+/web/test-results/
+/web/playwright-report/
+
 # Local runtime state
 /.env
 /uploads/
