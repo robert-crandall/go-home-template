@@ -17,6 +17,18 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.x'
+      # ubuntu-latest ships Node. Without web/bunfig.toml, `bun run` would honor
+      # vite's `#!/usr/bin/env node` shebang and build under Node - and every
+      # other step here would still pass, so the Bun path this template promises
+      # would go untested. A missing, misplaced, or typo'd bunfig is silent:
+      # Bun reports no error, it just falls back to Node. Assert the shim that
+      # shebang resolves through is actually Bun, before anything else runs.
+      - name: Assert bunfig.toml forces the Bun runtime
+        working-directory: web
+        run: |
+          runtime=$(bun run --silent node -p "typeof Bun === 'undefined' ? 'NODE' : 'BUN'")
+          echo "bun run resolves node -> $runtime"
+          [ "$runtime" = BUN ] || { echo "::error file=web/bunfig.toml::bun run built under $runtime, not Bun - web/bunfig.toml is not in force"; exit 1; }
       - run: bun install --frozen-lockfile
         working-directory: web
       - run: bun run check

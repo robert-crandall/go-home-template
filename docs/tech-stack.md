@@ -310,6 +310,13 @@ everywhere and CI tests the one a fresh clone gets. The trade is real and worth
 naming: Vite under Bun is a less-travelled path than Vite under Node. Running it
 on every PR is the mitigation.
 
+That config is load-bearing but its failure is silent: if `bunfig.toml` goes
+missing, lands in the wrong directory, or gets a typo'd key, Bun reports nothing
+and quietly falls back to Node. Every other check still passes, because a build
+under Node is a perfectly good build - it just isn't the one being promised. So
+CI asserts the runtime directly (D9) rather than inferring it from a green
+build.
+
 ### D5 - Tailwind CSS 4 and daisyUI 5 for theming
 
 Tailwind 4 via `@tailwindcss/vite`, configured CSS-first. daisyUI is loaded as a
@@ -460,7 +467,7 @@ job that doesn't gate the graph doesn't gate a deploy either:
 
 | Job | Needs | What it runs |
 |---|---|---|
-| `web` | - | `bun install --frozen-lockfile`, then `bun run check` (svelte-check), `bun run lint` (eslint), `bun run test` (vitest), `bun run build`, upload `web/build` |
+| `web` | - | `bun install --frozen-lockfile`, assert the Bun runtime is in force, then `bun run check` (svelte-check), `bun run lint` (eslint), `bun run test` (vitest), `bun run build`, upload `web/build` |
 | `go` | `web` | download artifact, then `go build ./... && go vet ./... && go test ./...` |
 | `spec` | - | `go run ./cmd/openapi`, `bun install --frozen-lockfile` + `bun run gen:api`, fail on diff |
 | `e2e` | `web` | download artifact, build the real binary, run it against Postgres, run Playwright |
@@ -481,6 +488,19 @@ version from the registry when the package isn't installed - and D3 pins that
 version precisely so `schema.d.ts` is pinned too. Those scripts arrive with the
 milestones that add eslint, vitest, and spec generation; this table is the
 contract they have to satisfy.
+
+The `web` job's runtime assertion is the guard for all of that. It runs
+`bun run --silent node -p "typeof Bun === 'undefined' ? 'NODE' : 'BUN'"` from
+`web/` and fails the job if the answer isn't `BUN`. What it actually proves is
+narrow but sufficient for the toolchain as it stands: every one of those tools
+is reached by command name, resolved through `node_modules/.bin`, and started by
+an `#!/usr/bin/env node` shebang, so all of them resolve `node` through the same
+`$PATH` shim the assertion observes. It is *not* a general "nothing here touches
+Node" detector - a future tool that hardcodes an absolute Node path, scrubs
+`$PATH`, or spawns its own interpreter would slip past it, and would need its
+own check. It also has to be a `bun run` of a *command*, not of a file path:
+`bun run ./some-file.mjs` uses Bun's runtime regardless of `bunfig.toml`, so
+writing the check that way yields an assertion that can never fail.
 
 `docker-build` builds to cache and asserts only that the Dockerfile still works.
 It can't `--load` its result into the local daemon, because a multi-platform
