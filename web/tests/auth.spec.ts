@@ -24,6 +24,49 @@ const alert = (page: Page) => page.getByRole('alert');
 const modeToggle = (page: Page) => page.getByRole('group', { name: 'Log in or register' });
 const credentialsForm = (page: Page) => page.locator('form');
 
+const RENDER_FLAG = '__greetingEverRendered';
+
+/**
+ * Records whether the guarded page's greeting was ever in the document, at any
+ * instant, rather than whether it is there now.
+ *
+ * `addInitScript` runs on every navigation before any app code, so the app
+ * cannot mount ahead of the observer. The check reads the mutation records'
+ * `addedNodes` instead of re-querying the document, because records are
+ * delivered in a microtask: a node inserted and removed again before delivery
+ * is absent from a query but still present in the log. The flag lives in
+ * `sessionStorage` rather than on `window` so that it survives the redirect
+ * itself: a guard that flashed the page and then hard-navigated would wipe a
+ * `window` flag along with the document, hiding the very flash we're measuring.
+ *
+ * The claim this earns is narrow but sufficient: it catches the Svelte mount of
+ * the guarded page, which is the flash the criterion is about. It is not a
+ * general "nothing ever rendered" detector - content injected before the
+ * document exists, or drawn without an `h1`, would not trip it.
+ */
+async function watchForGreetingRender(page: Page) {
+  await page.addInitScript((flag) => {
+    const isGreeting = (el: Element) =>
+      el.tagName === 'H1' && el.textContent?.trim() === 'Hello';
+
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          // Svelte inserts a built subtree, so the greeting usually arrives as
+          // a descendant of the added node rather than as the node itself.
+          if (isGreeting(node) || [...node.querySelectorAll('h1')].some(isGreeting)) {
+            sessionStorage.setItem(flag, 'true');
+          }
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  }, RENDER_FLAG);
+}
+
+const greetingEverRendered = (page: Page) =>
+  page.evaluate((flag) => sessionStorage.getItem(flag) === 'true', RENDER_FLAG);
+
 async function submitCredentials(page: Page, tab: 'Log in' | 'Register', password: string) {
   const toggle = modeToggle(page).getByRole('button', { name: tab, exact: true });
   await toggle.click();
@@ -45,13 +88,21 @@ test('register, stay signed in across reloads, log out, and log back in', async 
     if (header) authHeaders.push(`${request.method()} ${request.url()}`);
   });
 
+  await watchForGreetingRender(page);
+
   await test.step('the guarded page bounces a signed-out visitor to /login', async () => {
     await page.goto('/');
     await expect(page).toHaveURL(/\/login$/);
-    // The guard lives in `load`, so SvelteKit should never have rendered the
-    // page component. This checks the destination, not the absence of a flash -
-    // proving *that* would need render instrumentation the guard doesn't earn.
     await expect(greeting(page)).toHaveCount(0);
+
+    // toHaveCount(0) only samples the DOM once the redirect has settled, so on
+    // its own it would pass a guard that painted the page for a frame and then
+    // bounced - and "no flash" is the actual criterion. Measured, not assumed:
+    // moving the guard into the component makes the check below fail while the
+    // one above still passes. The observer is what closes that gap.
+    expect(await greetingEverRendered(page), 'the guarded page rendered before redirecting').toBe(
+      false
+    );
   });
 
   await test.step('registering the first account signs you in', async () => {
@@ -97,6 +148,33 @@ test('register, stay signed in across reloads, log out, and log back in', async 
     await expect(alert(page)).toHaveText('Could not reach the server.');
     await expect(page.getByRole('button', { name: 'Log out' })).toBeEnabled();
     await page.unroute('**/api/auth/logout');
+
+    // Both assertions above render from `data.user`, which the refused logout
+    // never touched - so they'd pass even if the click had wrongly cleared the
+    // in-memory session. Back is the path that makes that state observable
+    // today: `/login` is behind us in history, and its guard reads `auth.user`,
+    // not `data`, so a still-signed-in visitor gets bounced back to the
+    // greeting instead of being handed the login form.
+    //
+    // Asserted on content rather than URL because SvelteKit leaves the address
+    // bar on the history entry when a `load` redirects during a popstate
+    // navigation - the right page renders under the wrong URL. That's a real
+    // bug, filed as #18; it is not what this step is measuring, and it
+    // leaks nothing, since the content always matches the auth state.
+    const bounced = page.waitForEvent('framenavigated');
+    await page.goBack();
+    await bounced;
+    await expect(greeting(page)).toBeVisible();
+    await expect(credentialsForm(page)).toHaveCount(0);
+
+    // Back to a clean history entry, so the real logout below is testing the
+    // app rather than the state this probe left behind. The URL is asserted
+    // here precisely because #18 is a URL bug: without it, a forward that
+    // didn't move would leave us on `/login`, and the next step's
+    // `toHaveURL(/\/login$/)` would pass without a logout ever happening.
+    await page.goForward();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(greeting(page)).toBeVisible();
   });
 
   await test.step('logging out returns you to /login and sticks', async () => {
