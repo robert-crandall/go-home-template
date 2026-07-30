@@ -16,7 +16,7 @@ cd "$(dirname "$0")/.."
 # that here would just be a worse copy of `make setup`.
 if [ ! -f web/build/index.html ]; then
   echo "==> web/build is missing; building the frontend once so the binary can embed it"
-  (cd web && npm run build)
+  (cd web && bun run build)
 fi
 
 echo "==> building the API server"
@@ -54,4 +54,4 @@ fi
 echo "==> starting Vite on :5173"
 # Not exec: that would replace this shell and the EXIT trap would never fire,
 # orphaning the API server every time you ctrl-C out of the dev loop.
-cd web && npm run dev
+cd web && bun run dev

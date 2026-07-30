@@ -20,16 +20,16 @@ init: ## Rename this template: make init [MODULE=github.com/you/thing] [NAME=Thi
 	@scripts/init.sh "$(APP_MODULE)" "$(APP_NAME)" "$(APP_SLUG)"
 
 setup: ## First run after cloning: deps, upload dir, .env, and a frontend build
-	cd web && npm ci
+	cd web && bun install --frozen-lockfile
 	mkdir -p uploads
 	@test -f .env || { cp .env.example .env && echo "wrote .env from .env.example"; }
-	cd web && npm run build
+	cd web && bun run build
 
 # The frontend build has to come first: web/dist.go does `//go:embed all:build`,
 # so the Go compile fails outright until web/build exists. That ordering is the
 # same reason CI's go job depends on the web job's artifact.
 build: ## Build the frontend, then the binary into bin/
-	cd web && npm run build
+	cd web && bun run build
 	go build -o bin/$(APP_SLUG) ./cmd/server
 
 run: ## Run the built binary
@@ -43,13 +43,13 @@ dev: ## Vite on :5173 with the API server on :8080
 # missing keeps the Go test loop fast; `make build` always rebuilds it, because
 # that one has to produce a shippable binary.
 web/build/index.html:
-	cd web && npm run build
+	cd web && bun run build
 
 test: web/build/index.html ## Run the Go tests
 	go test ./...
 
 check: ## Type-check the frontend
-	cd web && npm run check
+	cd web && bun run check
 
 clean: ## Remove build output
 	rm -rf bin .bin web/build web/.svelte-kit
