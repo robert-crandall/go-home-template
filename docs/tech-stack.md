@@ -293,8 +293,9 @@ is `bun test`. This is a toolchain swap, not a rewrite. Dependabot supports
 `package-ecosystem: bun` for version updates (Bun >= 1.1.39), so nothing is lost
 on the maintenance side either. The version is pinned in one place per surface
 and both track the same minor: `bun-version: '1.3.x'` in CI, `oven/bun:1.3-alpine`
-in the Docker builder. That's a floating patch line, not an exact pin - Dependabot
-moves the minor when it's time.
+in the Docker builder. Patch floats within that minor; moving the minor is
+deliberate maintenance and has to change both at once. Dependabot's `bun`
+ecosystem updates the dependencies in `web/`, not either of these pins.
 
 **One non-obvious consequence, and it's why `web/bunfig.toml` exists.** `vite`,
 `svelte-kit`, and `svelte-check` are all installed with a `#!/usr/bin/env node`
@@ -461,7 +462,7 @@ job that doesn't gate the graph doesn't gate a deploy either:
 |---|---|---|
 | `web` | - | `bun install --frozen-lockfile`, then `bun run check` (svelte-check), `bun run lint` (eslint), `bun run test` (vitest), `bun run build`, upload `web/build` |
 | `go` | `web` | download artifact, then `go build ./... && go vet ./... && go test ./...` |
-| `spec` | - | `go run ./cmd/openapi`, `bun install --frozen-lockfile` + `bunx --bun openapi-typescript`, fail on diff |
+| `spec` | - | `go run ./cmd/openapi`, `bun install --frozen-lockfile` + `bun run gen:api`, fail on diff |
 | `e2e` | `web` | download artifact, build the real binary, run it against Postgres, run Playwright |
 | `docker-build` | - | `docker buildx build` for amd64 + arm64, cache output only. PRs stop here |
 
