@@ -7,7 +7,7 @@ APP_MODULE ?= github.com/robert-crandall/go-home-template
 APP_NAME   ?= Go Home Template
 APP_SLUG   ?= go-home-template
 
-.PHONY: help init setup build run dev test check clean
+.PHONY: help init setup build run dev test check spec clean
 
 # So a frontend build that fails halfway doesn't leave an index.html behind that
 # makes the target below look satisfied.
@@ -50,6 +50,14 @@ test: web/build/index.html ## Run the Go tests
 
 check: ## Type-check the frontend
 	cd web && bun run check
+
+# Regenerate the API contract. cmd/openapi imports internal/app, not web, so
+# this needs neither a database nor a frontend build - which is what lets CI
+# check for drift in a job that has neither. Both outputs are committed; CI
+# fails if running this produces a diff.
+spec: ## Regenerate docs/openapi.json and the typed client from the routes
+	go run ./cmd/openapi
+	cd web && bun run gen:api
 
 clean: ## Remove build output
 	rm -rf bin .bin web/build web/.svelte-kit
