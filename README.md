@@ -67,6 +67,17 @@ the dev loop misbehaves.
 Other targets: `make test` (Go tests), `make check` (frontend type check),
 `make clean`, and `make help`.
 
+### Git worktrees
+
+`.env` is gitignored, so a new worktree starts without one and `make setup`
+would recreate it from `.env.example` - handing you default config instead of
+the config you were actually running. `.worktreeinclude` lists the ignored files
+a new worktree should inherit from the main checkout, and `.env` is on it. Add
+anything else your app keeps outside git and expects to be there.
+
+This is only read by tooling that looks for it; plain `git worktree add` ignores
+the file, so a setup that doesn't use it loses nothing.
+
 ## The build order
 
 `web/dist.go` embeds the built frontend:
