@@ -11,7 +11,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # web/dist.go embeds web/build, so even the dev binary won't compile without it.
-# Build it once if it's missing, so `make dev` works straight after a clone.
+# Build it once if it's missing, so `make dev` survives a `make clean`. This
+# still needs `make setup` to have installed web/node_modules; bootstrapping
+# that here would just be a worse copy of `make setup`.
 if [ ! -f web/build/index.html ]; then
   echo "==> web/build is missing; building the frontend once so the binary can embed it"
   (cd web && npm run build)
