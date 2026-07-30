@@ -69,28 +69,41 @@ if [ ${#files[@]} -eq 0 ]; then
   exit 1
 fi
 
-replace() {
-  OLD="$1" NEW="$2" perl -pi -e 's/\Q$ENV{OLD}\E/$ENV{NEW}/g' -- "${files[@]}"
-}
-
-# Order matters: the slug is a substring of the module path, so replacing it
-# first would leave "github.com/robert-crandall/<newslug>" behind.
-#
-# An identifier the new app happens to share (forking into another org under the
-# same repo name keeps the slug) is skipped rather than replaced, and dropped
-# from the check below - otherwise the check fails on a string that is now
-# legitimately the app's own.
-stale=()
-for pair in "$old_module|$module" "$old_name|$name" "$old_slug|$slug"; do
-  old=${pair%%|*}
-  new=${pair##*|}
-  if [ "$old" != "$new" ]; then
-    replace "$old" "$new"
-    stale+=(-e "$old")
-  fi
-done
+# All three substitutions happen in one pass, longest match first. Sequential
+# passes would cascade: the slug is a substring of the module path, and a new
+# name that contains an old one (`MODULE=github.com/you/go-home-template-plus`)
+# would get rewritten a second time into `go-home-template-plus-plus` - silently,
+# because by then the old identifier really is gone and the check below passes.
+# One pass with an alternation can't do that: every byte is rewritten at most
+# once, and the longest-first ordering means the module path wins over its own
+# trailing slug.
+OLD_MODULE="$old_module" NEW_MODULE="$module" \
+OLD_NAME="$old_name" NEW_NAME="$name" \
+OLD_SLUG="$old_slug" NEW_SLUG="$slug" \
+perl -pi -e '
+  BEGIN {
+    %map = (
+      $ENV{OLD_MODULE} => $ENV{NEW_MODULE},
+      $ENV{OLD_NAME}   => $ENV{NEW_NAME},
+      $ENV{OLD_SLUG}   => $ENV{NEW_SLUG},
+    );
+    $re = join "|", map { quotemeta } sort { length($b) <=> length($a) } keys %map;
+  }
+  s/($re)/$map{$1}/g;
+' -- "${files[@]}"
 
 # The check that makes this reliable rather than a checklist people half-follow.
+# An old identifier that survives *inside* the new identity is not a leftover -
+# `go-home-template-plus` contains `go-home-template` by construction - so those
+# get reported as unchecked rather than failed.
+stale=()
+for old in "$old_module" "$old_name" "$old_slug"; do
+  case "$module|$name|$slug" in
+    *"$old"*) echo "note: not checking for \"$old\" - your new identity contains it" ;;
+    *) stale+=(-e "$old") ;;
+  esac
+done
+
 if [ ${#stale[@]} -gt 0 ]; then
   leftovers=$(grep -lF "${stale[@]}" -- "${files[@]}" || true)
   if [ -n "$leftovers" ]; then

@@ -1,13 +1,13 @@
 # Go Home Template
 
 A starting point for a small self-hosted web app: a SvelteKit frontend embedded
-in a single Go binary, with auth, Postgres, file uploads, web push, and an MCP
-server already wired up.
+in a single Go binary, with auth, Postgres, file uploads, and web push already
+wired up.
 
 The backend work lives in [`go-home-server`][foundation], which this repo
 imports as a Go module rather than vendoring. You get its features for free and
 its bug fixes with a version bump. What's here is the shell around it: the
-frontend, the embed, the build, and the deploy.
+frontend, the embed, and the build.
 
 [foundation]: https://github.com/robert-crandall/go-home-server
 
@@ -90,8 +90,34 @@ Two things follow from that, and both bite eventually:
 The foundation owns the `users`, `sessions`, `api_tokens`, `push_subscriptions`,
 and `files` tables and migrates them itself. This repo ships no `migrations/`
 directory, because an empty one is a thing to explain and a thing to get wrong.
+Registering a second migration source at all makes goose create a version table
+for it, so an app with no migrations of its own would get an extra table it
+never asked for.
 
-When you need your own table, create `migrations/`, add a goose SQL file, and
-uncomment the second `db.MigrationSource` block in `cmd/server/main.go`. Both
-sources migrate independently, so your numbering never collides with the
-foundation's.
+It's three small steps rather than uncommenting a line. Create
+`migrations/migrations.go`:
+
+```go
+package migrations
+
+import "embed"
+
+//go:embed *.sql
+var FS embed.FS
+
+const Dir = "."
+```
+
+Write `migrations/00001_whatever.sql` as a goose migration. Then add a second
+source in `cmd/server/main.go`, next to the foundation's. It needs an import
+alias, because `cmd/server` already imports the foundation's package under the
+name `migrations`:
+
+```go
+import appmigrations "github.com/robert-crandall/go-home-template/migrations"
+
+db.MigrationSource{FS: appmigrations.FS, Dir: appmigrations.Dir},
+```
+
+Each source tracks its own goose version table, so your numbering starts at
+00001 and never collides with the foundation's.

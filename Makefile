@@ -12,7 +12,6 @@ APP_SLUG   ?= go-home-template
 help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-8s\033[0m %s\n", $$1, $$2}'
-
 init: ## Rename this template: make init [MODULE=github.com/you/thing] [NAME=Thing]
 	@scripts/init.sh "$(APP_MODULE)" "$(APP_NAME)" "$(APP_SLUG)"
 
@@ -35,7 +34,14 @@ run: ## Run the built binary
 dev: ## Vite on :5173 with the API server on :8080
 	@scripts/dev.sh
 
-test: ## Run the Go tests
+# The embed means `go test ./...` doesn't compile without web/build either, so
+# `make clean && make test` needs something there. Building only when it's
+# missing keeps the Go test loop fast; `make build` always rebuilds it, because
+# that one has to produce a shippable binary.
+web/build/index.html:
+	cd web && npm run build
+
+test: web/build/index.html ## Run the Go tests
 	go test ./...
 
 check: ## Type-check the frontend
