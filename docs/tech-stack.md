@@ -38,7 +38,7 @@ graph TD
 
   subgraph binary["Single Go binary (this repo)"]
     EMBED["go:embed all:web/build"]
-    APP["internal/app - Wire(), your routes"]
+    APP["internal/app - RegisterRoutes(), your routes"]
     FOUND["go-home-server<br/>server / auth / files / notify / llm / db"]
   end
 
@@ -57,7 +57,7 @@ graph TD
 
 | Layer | Choice | Version at time of writing |
 |---|---|---|
-| Backend foundation | `go-home-server` | latest |
+| Backend foundation | `go-home-server` | >= v0.1.4 |
 | Language | Go | 1.26 |
 | HTTP | chi + huma (from the foundation) | - |
 | Database | Postgres, one instance | 16 |
@@ -83,6 +83,8 @@ thumbnails, web push, graceful shutdown, `/healthz`) comes in as a dependency.
 **Why:** the whole point of the foundation is that a security fix lands once and
 every app picks it up with `go get -u`. Vendoring the source into the template
 would break that on day one.
+
+**Minimum version: v0.1.4.** See "Foundation version" at the end.
 
 **Consequence:** the template must not reimplement anything the foundation
 offers. If a template app needs different auth behavior, the fix goes upstream.
@@ -133,36 +135,60 @@ things to add when something actually hurts.
 huma generates the OpenAPI spec from the Go handler types. The template turns
 that into a build artifact:
 
-1. `internal/app/wire.go` exposes one function, `Wire(api huma.API, deps Deps)`,
-   which registers every operation (the foundation's and the app's). It is the
-   only place routes are mounted.
-2. `cmd/server` calls `Wire` with live dependencies.
-3. `cmd/openapi` calls `Wire` with **spec-mode dependencies** and marshals
+1. `internal/app/routes.go` exposes one function, `RegisterRoutes(api huma.API,
+   deps Deps)`, which mounts every operation (the foundation's and the app's).
+   It is the only place routes are registered. The name matches the foundation's
+   README so the two read as one instruction.
+2. `cmd/server` calls it with live dependencies.
+3. `cmd/openapi` calls it with **spec-mode dependencies** and marshals
    `srv.API.OpenAPI()` to `docs/openapi.json`.
 4. `web/src/lib/api/schema.d.ts` is generated from that JSON by
    `openapi-typescript`.
 5. CI regenerates both and fails if the committed copies differ.
 
+Steps 2 and 3 sharing one function is the whole point: a spec generated from a
+*different* wiring than the one that serves traffic is worse than no spec.
+
 **Spec-mode dependencies are not zero values.** huma only reflects handler types
 at registration time, so no database is needed, but the services still have to
-be *constructed*. That means a real `auth.NewService(nil, true)`, a real
-`notify.NewService(nil, notify.VAPID{})`, and a real
-`files.NewService(nil, files.Options{Dir: tmp})` where `tmp` is a temp directory
-that actually exists and is writable, because `files.NewService` stats the
-directory and write-probes it. A nil `*auth.Service` would panic in
-`RegisterTokens`. The foundation's `internal/wiring` test does exactly this, and
-the template copies the pattern.
+be *constructed*: `auth.NewService(nil, true)`, `notify.NewService(nil,
+notify.VAPID{})`, and `files.NewService(nil, files.Options{Dir: tmp})` with a
+real writable temp dir, because `files.NewService` stats and write-probes it.
+`server.Options.HumaConfig` has to be set to `authSvc.TokenHumaConfig` here too,
+because the template enables API tokens and `RegisterTokens` panics without it
+(D11). As of v0.1.4 the foundation's README documents this whole pattern with a
+worked `cmd/openapi`, so the template follows it rather than inventing its own.
 
-The invariant that makes this work, and the thing to enforce: **registration may
-capture a dependency but must never call one.** An app route whose `huma.Register`
-call reads from Postgres to build an enum, say, breaks spec generation. The
-template ships a test that runs `Wire` with spec-mode deps and no `DATABASE_URL`
-in the environment, so violating that invariant fails CI rather than the next
-release.
+The invariant to enforce: **registration may capture a dependency but must never
+call one.** An app route whose `huma.Register` call reads from Postgres to build
+an enum, say, breaks spec generation. The template ships a test that runs
+`RegisterRoutes` with spec-mode deps and no `DATABASE_URL` in the environment,
+so violating that invariant fails CI rather than the next release.
 
-**Why a `Wire` function instead of registering routes in `main`:** two binaries
-need the same route set, and a spec generated from a *different* wiring than the
-one that serves traffic is worse than no spec.
+**The spec is worth generating because it now describes authentication.** As of
+v0.1.4 every foundation operation declares `Security`, and every operation that
+can fail enumerates its errors, so the generated types carry typed 401/403/404
+variants and the rendered docs show which endpoints take a session cookie, which
+also take a bearer token, and which are public. (The one operation without an
+`Errors` list is `push-vapid-key`, which is public and has no failure path.)
+Before that release the spec claimed the whole API was unauthenticated.
+
+**One rough edge for the app's own routes.** The helpers that build those
+security requirements live in `internal/apisecurity`, so the template can't call
+them. An app route that needs the same treatment writes the scheme names as
+literals:
+
+```go
+Security: []map[string][]string{{"session": {}}, {"bearer": {}}},
+```
+
+which works, because they're just strings in the spec, but it's a stringly-typed
+copy of an internal constant and nothing catches a drift. The `bearer` half is
+only valid when `TokenHumaConfig` was applied, since that's what puts the scheme
+in `components.securitySchemes`; a template that drops API tokens (D11) must
+drop it here too or emit a dangling reference. Filed upstream as
+[#33]; until it lands, the template keeps those literals in one helper in
+`internal/app/` so there's a single place to fix.
 
 **Why `openapi-typescript` + `openapi-fetch` over a full client generator:**
 `openapi-fetch` is a thin typed wrapper over `fetch` (roughly 6 kB minified)
@@ -210,7 +236,18 @@ genuinely expensive to reverse, and I'm taking it deliberately.
 
 **Why `all:` in the embed directive:** SvelteKit emits `_app/`, and plain
 `//go:embed build` skips directories starting with `_`. Without `all:` the app
-compiles, boots, serves `index.html`, and then 404s every script.
+compiles, boots, serves `index.html`, and then 404s every script. This is the
+one trap here that stays silent: `index.html` is embedded either way. Forgetting
+`fs.Sub` is the loud one - since v0.1.4 `server.New` panics at startup with
+`server: SPA has no index.html at its root - did you forget fs.Sub(embedded,
+"build")?`.
+
+**Caching lines up with SvelteKit's layout.** The foundation serves
+`_app/immutable/` and `assets/` with a one-year immutable `Cache-Control` and
+everything else `no-cache`, which is exactly the split SvelteKit produces:
+content-hashed chunks under `_app/immutable/`, and `index.html` plus
+`_app/version.json` revalidated on every load so a deploy is picked up. The
+template must not put unhashed output under either prefix.
 
 **The build-order consequence, which is the sharpest edge in this whole
 document:** `//go:embed all:build` means **`go build ./...` fails on a clean
@@ -318,7 +355,9 @@ attached. Two caveats that are accepted rather than solved:
 
 Neither is worth code at this threat model, but don't read "SameSite=Lax" as
 comprehensive CSRF protection, and don't bolt on a CSRF token library thinking
-something is missing.
+something is missing. Both caveats are now written down in the foundation's own
+"Acknowledged, not fixed" list as of v0.1.4, so this section restates an upstream
+position rather than asserting one.
 
 TLS termination is somebody else's job (Cloudflare Tunnel, Tailscale, or a
 reverse proxy on the host). The container speaks plain HTTP.
@@ -472,13 +511,26 @@ The GHCR path is deliberately *not* rewritten: the workflow uses
 This is boring, and skipping it is how you end up with three apps that all think
 they're called `go-home-template`.
 
-### D11 - Optional pieces, off by default
+### D11 - Optional pieces, mostly off by default
 
 Wired but inert unless configured, so an app opts in by setting an env var
-rather than by writing plumbing:
+rather than by writing plumbing. API tokens are the one exception - they're on,
+which means `/api/tokens` exists on a fresh app:
 
-- **API tokens** (`authSvc.RegisterTokens`) - on, because the MCP server needs
-  them and they cost nothing when unused. No UI (D6); mint one with `curl`.
+- **API tokens** - on, because the MCP server needs them and they cost nothing
+  when unused. No UI (D6); mint one with `curl`. Since v0.1.4 this is a pair:
+  `server.Options{HumaConfig: authSvc.TokenHumaConfig}` at construction, then
+  `authSvc.RegisterTokens(api)` at registration. `RegisterTokens` panics if the
+  config wasn't applied, which is the right trade - a missing bearer scheme in
+  the spec used to be silent. `HumaConfig` is a single function slot, so if the
+  template ever wants its own huma tweaks it composes them inside one closure -
+  and `TokenHumaConfig` goes **last**, because `RegisterTokens` re-checks the
+  finished config and a later tweak that replaces `Components` or
+  `SecuritySchemes` would strip the schemes back out and trip the panic.
+- **Bearer beats cookie, so don't send both.** With tokens enabled, a request
+  carrying an `Authorization: Bearer` header is committed to token auth and
+  never falls back to the session cookie, so a stale token 401s a browser that
+  has a perfectly good session. The SPA must not attach one.
 - **Web push** - the server half is registered, and stays disabled while both
   VAPID keys are empty. Note that it's both or neither: `notify.NewService`
   validates the pair (shape, P-256 sizes, and that the public key really derives
@@ -531,12 +583,12 @@ homelab template gets wrong by omission more often than by design:
 ## Deliberately not here
 
 - **SSR / server-side rendering.** See D4.
-- **A service worker, and therefore the browser half of web push.** See D6. This
-  is the most likely first addition to any app built from this template, and it
-  is genuinely missing rather than unnecessary: the foundation stores
-  subscriptions and sends pushes but says the frontend half is the app's to
-  write, so today every app writes it from scratch. Written down as finding 6
-  below rather than solved here.
+- **A service worker, and therefore the browser half of web push.** See D6.
+  Still the most likely first addition to any app built from this template, but
+  no longer undocumented: v0.1.4 added `docs/web-push.md` upstream with the
+  minimal subscribe flow and service worker. Left out here because a template
+  that ships a service worker ships a caching strategy, and the wrong caching
+  strategy is worse than none.
 - **A state management library.** Svelte 5 runes plus a couple of `.svelte.ts`
   modules cover a single-user app.
 - **A component library.** See D5.
@@ -567,107 +619,31 @@ Accepted here:
   email exists.
 - **huma's default metadata routes are unauthenticated.** `huma.DefaultConfig`
   mounts `/docs`, `/openapi.json`, `/openapi.yaml` (plus the 3.0 variants), and
-  `/schemas/{schema}`. They leak the API shape, not data. Worth knowing that
-  this is currently unavoidable rather than a choice: `server.New` takes no huma
-  config, so an app can't turn them off without bypassing the foundation's
-  bootstrap. See finding 8.
+  `/schemas/{schema}`. They leak the API shape, not data. Since v0.1.4 this is
+  an actual choice rather than a constraint - `Options.HumaConfig` can blank
+  those paths - and the choice is to leave them on, because the rendered docs
+  are the fastest way to poke at the API and the spec they expose is committed
+  to a public template repo anyway.
 - **The CSRF caveats in D7.**
 - **The first-user registration window**, inherited from the foundation.
 - **Dependabot auto-merges major versions**, per D9.
 
-## Findings for `go-home-server`
+## Foundation version
 
-Things this template ran into that look like they belong upstream. Each was
-verified against the source. None is blocking; the template can ship around all
-of them. All are filed as issues on `go-home-server`, linked per finding.
+**This template requires `go-home-server` v0.1.4 or later.** Not a soft
+preference: `auth.Service.TokenHumaConfig` doesn't exist before it, and
+`RegisterTokens` panics without it, so the wiring in D3 and D11 simply won't
+compile or boot against v0.1.3.
 
-1. **`setSPACacheControl` only knows about `assets/`** (`server/server.go:225`,
-   [#14]).
-   It marks `assets/*` immutable and everything else `no-cache`, which is right
-   for a plain Vite build. SvelteKit's static adapter puts its content-hashed
-   output under `_app/immutable/` instead, so every JS chunk gets revalidated on
-   every load. It's correct, just slower, and behind Cloudflare it means an
-   origin round trip per asset. Either match `_app/immutable/` alongside
-   `assets/`, or make the immutable prefixes a field on `server.Options`.
-   *Highest value of the list, since it silently affects any SvelteKit app.*
+v0.1.4 also carries the nine fixes this document depends on, all of which came
+out of writing its first draft against v0.1.3. The changes absorbed here are in
+D3 (the spec now describes authentication, and token wiring is a two-part
+pairing), D4 (the cache-prefix mismatch is gone and the `fs.Sub` mistake is now a
+boot panic), D7 and the threat model (both now cite upstream rather than assert),
+and D11.
 
-2. **The OpenAPI spec declares no security schemes at all** ([#15]). There is no
-   `Security:` field on any `huma.Operation` in the module, so the generated
-   spec presents `/api/files`, `/api/tokens`, `/api/push/*`, and `/api/auth/me`
-   as unauthenticated. To be precise about the impact: a same-origin cookie
-   client like `openapi-fetch` still works fine, because the browser attaches
-   the cookie regardless of what the spec says. What breaks is everything that
-   *reads* the security metadata: the rendered docs, anyone writing a
-   non-browser client, and generators that provision auth from the spec.
-   Defining a cookie scheme and a bearer scheme and attaching them per operation
-   is a contained change with a large accuracy payoff.
+One follow-on is still open: [#33], the security helpers are in
+`internal/apisecurity`, so the template can't use them for its own operations and
+has to write the scheme names as literals. See D3.
 
-3. **`Errors` is declared unevenly, so most error responses are undocumented**
-   ([#17]).
-   Only four operations enumerate their errors: `register` (403/409/422,
-   `auth/auth.go:430`) and the three token operations (`auth/tokens.go:360`,
-   `:399`, `:418`). `login` returns 401 and doesn't say so; `current-user`
-   returns 401 through `RequireUser` and doesn't say so; `logout` can return 500
-   when it can't revoke the session; every protected file and push operation is
-   in the same position; and the token operations themselves omit the 401 that
-   `RequireSessionUser` can return. Worth one audit pass rather than a one-line
-   fix.
-
-4. **The nil-pool spec-generation pattern is only documented in a test** ([#19]).
-   `internal/wiring` proves you can register every endpoint against a nil
-   `*pgxpool.Pool` to marshal the OpenAPI spec without a database, which is what
-   an app wants if it generates its typed frontend client offline (scraping
-   `/openapi.json` from a running server is the other option, and needs a
-   running server). Right now the pattern is rediscovered by reading a test in
-   an internal package. It also has two non-obvious corners: `files.NewService`
-   stats and write-probes its directory (`files/files.go:101`), so it needs a
-   real temp dir, and `RegisterTokens` dereferences the service
-   (`auth/tokens.go:357`), so a nil `*auth.Service` panics. A short README
-   section beats a helper here, because a `server.WriteOpenAPI` helper can't see
-   the app's own routes and so would only ever produce half the spec.
-
-5. **`server.Options.SPA` silently accepts a wrongly-rooted `fs.FS`** ([#18]). It needs
-   `index.html` at the root, so apps must write `fs.Sub(embedded, "build")`.
-   Forget it and the app builds, boots, and serves "index.html not found in
-   embedded SPA" at request time (`server/server.go:233`). A startup check when
-   `SPA != nil` would turn that into a boot crash, which is the same philosophy
-   as `UPLOAD_DIR` refusing to create its own directory.
-
-6. **The browser half of web push has no home** ([#20]). The README correctly says the
-   service worker and subscribe flow belong to the app, but the result is that
-   every app writes the same 60 lines of `registration.pushManager.subscribe`,
-   base64url VAPID key decoding, and a `push`/`notificationclick` handler from
-   scratch, and gets the key decoding wrong the first time. That code can't be a
-   Go package, but it could be a documented snippet in the README next to the
-   `notify` section. Not code, just the missing half of an existing feature's
-   documentation.
-
-7. **Two things worth a line in the README rather than a fix** ([#21], [#22]). The CSRF posture
-   (`SameSite=Lax`, plus the fact that session sliding means even GET mutates
-   `expires_at`, `auth/auth.go:240`) is a real invariant that's currently
-   implicit, and it belongs in "Acknowledged, not fixed" so the next app author
-   neither bolts on a redundant CSRF token nor assumes protection that isn't
-   there. And the `//go:embed all:build` trap from D4 will bite anyone embedding
-   a SvelteKit build; one sentence in "Start a new app" would cover it, without
-   the module having to know anything about SvelteKit's layout.
-
-8. **`server.New` hardcodes `huma.DefaultConfig` with no seam**
-   (`server/server.go:91`, [#16]). `Options` exposes `Title`, `Version`, `Addr`, `SPA`,
-   `Middlewares`, and `HealthCheck`, but nothing that reaches the huma config.
-   So an app can't move or disable `/docs`, `/openapi`, and `/schemas`, can't
-   add security schemes to `Components`, and can't change the docs renderer,
-   without giving up `server.New` and rebuilding the router itself. That last
-   one is the sharp bit: it also blocks the clean fix for finding 2. An
-   `Options.HumaConfig func(huma.Config) huma.Config` hook, applied after
-   `DefaultConfig`, would cover all of it in about four lines and keep the
-   default behavior identical for apps that don't set it.
-
-[#14]: https://github.com/robert-crandall/go-home-server/issues/14
-[#15]: https://github.com/robert-crandall/go-home-server/issues/15
-[#16]: https://github.com/robert-crandall/go-home-server/issues/16
-[#17]: https://github.com/robert-crandall/go-home-server/issues/17
-[#18]: https://github.com/robert-crandall/go-home-server/issues/18
-[#19]: https://github.com/robert-crandall/go-home-server/issues/19
-[#20]: https://github.com/robert-crandall/go-home-server/issues/20
-[#21]: https://github.com/robert-crandall/go-home-server/issues/21
-[#22]: https://github.com/robert-crandall/go-home-server/issues/22
+[#33]: https://github.com/robert-crandall/go-home-server/issues/33
