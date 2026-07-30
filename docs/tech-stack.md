@@ -27,8 +27,9 @@ config, the Dockerfile, the compose file, and the CI/CD workflows. Those get
 copied once per app and then diverge, which is exactly why they belong in a
 template rather than a library.
 
-The split in one line: **`go-home-server` is vendored, `go-home-template` is
-forked.**
+The split in one line: **`go-home-server` is a dependency, `go-home-template` is
+a starting point.** You `go get` the first and never edit it; you fork the second
+and immediately diverge.
 
 ```mermaid
 graph TD
@@ -57,7 +58,7 @@ graph TD
 
 | Layer | Choice | Version at time of writing |
 |---|---|---|
-| Backend foundation | `go-home-server` | >= v0.1.4 |
+| Backend foundation | `go-home-server` | pinned, see "Foundation version" |
 | Language | Go | 1.26 |
 | HTTP | chi + huma (from the foundation) | - |
 | Database | Postgres, one instance | 16 |
@@ -84,7 +85,8 @@ thumbnails, web push, graceful shutdown, `/healthz`) comes in as a dependency.
 every app picks it up with `go get -u`. Vendoring the source into the template
 would break that on day one.
 
-**Minimum version: v0.1.4.** See "Foundation version" at the end.
+**Pin the version carefully.** See "Foundation version" at the end; `@latest`
+is not necessarily new enough.
 
 **Consequence:** the template must not reimplement anything the foundation
 offers. If a template app needs different auth behavior, the fix goes upstream.
@@ -173,22 +175,28 @@ also take a bearer token, and which are public. (The one operation without an
 `Errors` list is `push-vapid-key`, which is public and has no failure path.)
 Before that release the spec claimed the whole API was unauthenticated.
 
-**One rough edge for the app's own routes.** The helpers that build those
-security requirements live in `internal/apisecurity`, so the template can't call
-them. An app route that needs the same treatment writes the scheme names as
-literals:
+**The app's own routes get the same treatment**, via the `apisec` package
+([#34]):
 
 ```go
-Security: []map[string][]string{{"session": {}}, {"bearer": {}}},
+huma.Register(api, huma.Operation{
+    OperationID: "list-widgets",
+    Method:      http.MethodGet,
+    Path:        "/api/widgets",
+    Errors:      []int{http.StatusUnauthorized},
+    Security:    apisec.User(api),
+}, listWidgets)
 ```
 
-which works, because they're just strings in the spec, but it's a stringly-typed
-copy of an internal constant and nothing catches a drift. The `bearer` half is
-only valid when `TokenHumaConfig` was applied, since that's what puts the scheme
-in `components.securitySchemes`; a template that drops API tokens (D11) must
-drop it here too or emit a dangling reference. Filed upstream as
-[#33]; until it lands, the template keeps those literals in one helper in
-`internal/app/` so there's a single place to fix.
+`apisec.User` is the one to reach for: it matches what `auth.Middleware` plus
+`RequireUser` actually accept, and it decides whether to include bearer by
+asking the API rather than guessing, so an app that drops API tokens (D11)
+automatically gets a session-only requirement instead of a spec referencing a
+scheme that isn't declared. `Session` is for credential-management routes,
+`Public` for unauthenticated ones. Pass the same `api` you're registering the
+operation on: these helpers also install the session scheme on it if it's
+missing. The template never writes scheme names by hand; that was [#33], and
+hand-written literals are exactly what `apisec` exists to stop.
 
 **Why `openapi-typescript` + `openapi-fetch` over a full client generator:**
 `openapi-fetch` is a thin typed wrapper over `fetch` (roughly 6 kB minified)
@@ -630,20 +638,25 @@ Accepted here:
 
 ## Foundation version
 
-**This template requires `go-home-server` v0.1.4 or later.** Not a soft
-preference: `auth.Service.TokenHumaConfig` doesn't exist before it, and
-`RegisterTokens` panics without it, so the wiring in D3 and D11 simply won't
-compile or boot against v0.1.3.
+The template needs `auth.Service.TokenHumaConfig` (v0.1.4) and the `apisec`
+package ([#34], merged but untagged at the time of writing), so `go.mod` reads:
 
-v0.1.4 also carries the nine fixes this document depends on, all of which came
-out of writing its first draft against v0.1.3. The changes absorbed here are in
-D3 (the spec now describes authentication, and token wiring is a two-part
-pairing), D4 (the cache-prefix mismatch is gone and the `fs.Sub` mistake is now a
-boot panic), D7 and the threat model (both now cite upstream rather than assert),
-and D11.
+```
+github.com/robert-crandall/go-home-server v0.1.5-0.20260730143552-9721cc10617b
+```
 
-One follow-on is still open: [#33], the security helpers are in
-`internal/apisecurity`, so the template can't use them for its own operations and
-has to write the scheme names as literals. See D3.
+Note that `@latest` resolves to v0.1.4 and does **not** have `apisec`, so the
+pin has to be explicit. Once a release after v0.1.4 is tagged, replace the
+pseudo-version with the tag; nothing else changes, and Dependabot should offer
+the bump on its own (D9).
+
+The upstream work behind those two versions came out of writing this document's
+first draft against v0.1.3, which turned up ten things that belonged there
+rather than worked around here. What the document absorbed:
+D3 (the spec describes authentication now, token wiring is a two-part pairing,
+and app routes declare security through `apisec`), D4 (the cache-prefix mismatch
+is gone and the `fs.Sub` mistake is a boot panic), D7 and the threat model (both
+cite upstream rather than assert), and D11.
 
 [#33]: https://github.com/robert-crandall/go-home-server/issues/33
+[#34]: https://github.com/robert-crandall/go-home-server/pull/34
