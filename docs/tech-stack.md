@@ -579,9 +579,10 @@ Accepted here:
 
 Things this template ran into that look like they belong upstream. Each was
 verified against the source. None is blocking; the template can ship around all
-of them.
+of them. All are filed as issues on `go-home-server`, linked per finding.
 
-1. **`setSPACacheControl` only knows about `assets/`** (`server/server.go:218`).
+1. **`setSPACacheControl` only knows about `assets/`** (`server/server.go:225`,
+   [#14]).
    It marks `assets/*` immutable and everything else `no-cache`, which is right
    for a plain Vite build. SvelteKit's static adapter puts its content-hashed
    output under `_app/immutable/` instead, so every JS chunk gets revalidated on
@@ -590,7 +591,7 @@ of them.
    `assets/`, or make the immutable prefixes a field on `server.Options`.
    *Highest value of the list, since it silently affects any SvelteKit app.*
 
-2. **The OpenAPI spec declares no security schemes at all.** There is no
+2. **The OpenAPI spec declares no security schemes at all** ([#15]). There is no
    `Security:` field on any `huma.Operation` in the module, so the generated
    spec presents `/api/files`, `/api/tokens`, `/api/push/*`, and `/api/auth/me`
    as unauthenticated. To be precise about the impact: a same-origin cookie
@@ -601,7 +602,8 @@ of them.
    Defining a cookie scheme and a bearer scheme and attaching them per operation
    is a contained change with a large accuracy payoff.
 
-3. **`Errors` is declared unevenly, so most error responses are undocumented.**
+3. **`Errors` is declared unevenly, so most error responses are undocumented**
+   ([#17]).
    Only four operations enumerate their errors: `register` (403/409/422,
    `auth/auth.go:430`) and the three token operations (`auth/tokens.go:360`,
    `:399`, `:418`). `login` returns 401 and doesn't say so; `current-user`
@@ -611,7 +613,7 @@ of them.
    `RequireSessionUser` can return. Worth one audit pass rather than a one-line
    fix.
 
-4. **The nil-pool spec-generation pattern is only documented in a test.**
+4. **The nil-pool spec-generation pattern is only documented in a test** ([#19]).
    `internal/wiring` proves you can register every endpoint against a nil
    `*pgxpool.Pool` to marshal the OpenAPI spec without a database, which is what
    an app wants if it generates its typed frontend client offline (scraping
@@ -624,14 +626,14 @@ of them.
    section beats a helper here, because a `server.WriteOpenAPI` helper can't see
    the app's own routes and so would only ever produce half the spec.
 
-5. **`server.Options.SPA` silently accepts a wrongly-rooted `fs.FS`.** It needs
+5. **`server.Options.SPA` silently accepts a wrongly-rooted `fs.FS`** ([#18]). It needs
    `index.html` at the root, so apps must write `fs.Sub(embedded, "build")`.
    Forget it and the app builds, boots, and serves "index.html not found in
    embedded SPA" at request time (`server/server.go:233`). A startup check when
    `SPA != nil` would turn that into a boot crash, which is the same philosophy
    as `UPLOAD_DIR` refusing to create its own directory.
 
-6. **The browser half of web push has no home.** The README correctly says the
+6. **The browser half of web push has no home** ([#20]). The README correctly says the
    service worker and subscribe flow belong to the app, but the result is that
    every app writes the same 60 lines of `registration.pushManager.subscribe`,
    base64url VAPID key decoding, and a `push`/`notificationclick` handler from
@@ -640,7 +642,7 @@ of them.
    `notify` section. Not code, just the missing half of an existing feature's
    documentation.
 
-7. **Two things worth a line in the README rather than a fix.** The CSRF posture
+7. **Two things worth a line in the README rather than a fix** ([#21], [#22]). The CSRF posture
    (`SameSite=Lax`, plus the fact that session sliding means even GET mutates
    `expires_at`, `auth/auth.go:240`) is a real invariant that's currently
    implicit, and it belongs in "Acknowledged, not fixed" so the next app author
@@ -650,7 +652,7 @@ of them.
    the module having to know anything about SvelteKit's layout.
 
 8. **`server.New` hardcodes `huma.DefaultConfig` with no seam**
-   (`server/server.go:91`). `Options` exposes `Title`, `Version`, `Addr`, `SPA`,
+   (`server/server.go:91`, [#16]). `Options` exposes `Title`, `Version`, `Addr`, `SPA`,
    `Middlewares`, and `HealthCheck`, but nothing that reaches the huma config.
    So an app can't move or disable `/docs`, `/openapi`, and `/schemas`, can't
    add security schemes to `Components`, and can't change the docs renderer,
@@ -659,3 +661,13 @@ of them.
    `Options.HumaConfig func(huma.Config) huma.Config` hook, applied after
    `DefaultConfig`, would cover all of it in about four lines and keep the
    default behavior identical for apps that don't set it.
+
+[#14]: https://github.com/robert-crandall/go-home-server/issues/14
+[#15]: https://github.com/robert-crandall/go-home-server/issues/15
+[#16]: https://github.com/robert-crandall/go-home-server/issues/16
+[#17]: https://github.com/robert-crandall/go-home-server/issues/17
+[#18]: https://github.com/robert-crandall/go-home-server/issues/18
+[#19]: https://github.com/robert-crandall/go-home-server/issues/19
+[#20]: https://github.com/robert-crandall/go-home-server/issues/20
+[#21]: https://github.com/robert-crandall/go-home-server/issues/21
+[#22]: https://github.com/robert-crandall/go-home-server/issues/22
