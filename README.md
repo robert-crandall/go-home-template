@@ -180,6 +180,152 @@ worktree tooling that looks for one. Plain `git worktree add` ignores it, so if
 your setup doesn't use such tooling, copy `.env` across by hand and the file
 costs you nothing.
 
+## Deploying
+
+The app ships as one container image: a distroless runtime with a single static
+binary in it, the SPA already embedded. No shell, no package manager, nothing to
+`docker exec` into.
+
+```sh
+docker build -t myapp .
+```
+
+`Dockerfile` builds the SPA and the binary in their own stages, so the image is
+reproducible from a clean checkout - you don't need to have run `make build`
+first. Both build stages are pinned to `$BUILDPLATFORM` and Go cross-compiles, so
+a multi-arch build needs no emulation:
+
+```sh
+# Validation only - a multi-platform result can't be loaded into the local
+# daemon, so this leaves nothing behind but a cache entry. This is what CI runs.
+docker buildx build --platform linux/amd64,linux/arm64 .
+
+# The pullable form, once you have somewhere to push to.
+docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/you/myapp:latest --push .
+```
+
+### Configuration
+
+| Variable | Required | What it does |
+| --- | --- | --- |
+| `DATABASE_URL` | **yes** | Postgres connection string. No default. |
+| `ADDR` | no | Listen address, default `:8080`. |
+| `APP_ENV` | no | `production` sets `Secure` on the session cookie. |
+| `UPLOAD_DIR` | no | Where file uploads are written. Unset disables them entirely - see below. |
+| `UPLOAD_MAX_BYTES` | no | Per-upload size cap. |
+| `ALLOW_OPEN_REGISTRATION` | no | Default false: the first user registers, then registration closes. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | no | Web push, off unless set. All three together or none: one key alone is a startup error, and so is a missing or malformed subject (it must be a `mailto:` or `https:` URL). |
+
+`APP_ENV=production` means **nobody can log in over plain HTTP** - a `Secure`
+cookie is dropped by the browser. Put TLS termination in front of it, or leave
+`APP_ENV` unset behind a trusted network.
+
+### If your app stores files
+
+Create the directory **before the first run** and give it to uid `65532`, which
+is who the distroless `nonroot` image runs as:
+
+```sh
+sudo mkdir -p /srv/myapp/uploads
+sudo chown 65532:65532 /srv/myapp/uploads
+```
+
+Both halves matter. Docker creates a missing bind-mount source itself, owned by
+root, and the app then can't write to it. And the app *checks*: at startup it
+stats `UPLOAD_DIR` and write-probes it, and refuses to boot if either fails. That
+crash is the feature. The alternative is uploads quietly landing in the
+container's own filesystem, where the next `docker pull` throws them away.
+
+### If your app doesn't
+
+Leave `UPLOAD_DIR` unset, mount nothing, and skip the section above entirely. The
+`/api/files*` routes simply aren't registered.
+
+One consequence worth knowing: `docs/openapi.json` is generated from the whole
+template, so it still describes the file endpoints. A deployment with uploads off
+serves a subset of its own published spec. That's deliberate - the committed spec
+is the template's contract, not a per-deployment manifest.
+
+### Compose
+
+This repo ships no compose file on purpose - your homelab already has one, and a
+second half-configured stack is worse than none. Here's the part to paste in:
+
+```yaml
+services:
+  app:
+    image: myapp
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    environment:
+      DATABASE_URL: postgres://app:app@db:5432/app?sslmode=disable
+      APP_ENV: production
+      # Uploads: delete this line AND the volumes block below if you have none.
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - /srv/myapp/uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U app']
+      interval: 10s
+      retries: 5
+
+volumes:
+  pgdata:
+```
+
+`condition: service_healthy` is not politeness. The app runs migrations at
+startup and has **no connection retry** - if Postgres isn't accepting connections
+yet, it exits. `restart: unless-stopped` is the other half of that answer.
+
+### Health
+
+The image has a `HEALTHCHECK`, so Docker tracks it for you - ask the *container*,
+not the image:
+
+```sh
+docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q app)"
+```
+
+Under the hood the binary probes itself - `/app healthcheck` GETs `/healthz` on
+`ADDR`'s port and exits nonzero on anything but a 200. Distroless has no shell
+and no curl, so the usual `HEALTHCHECK CMD curl ...` can't work here. `/healthz`
+pings the database, so a container that's up but has lost Postgres reports
+unhealthy rather than healthy-and-broken. You can also just ask it:
+
+```sh
+curl -i http://localhost:8080/healthz     # 200 {"status":"ok"} / 503 {"status":"degraded"}
+```
+
+### Backups
+
+If you have uploads, there are **two** things to back up and they have to be
+restored together. Restoring Postgres without its matching `UPLOAD_DIR` leaves
+rows pointing at files that don't exist; the reverse leaves orphaned blobs
+nothing references. Without uploads, it's just Postgres.
+
+### Verifying the image
+
+`make docker-smoke` builds the image and runs every one of these claims against a
+throwaway Postgres: it boots healthy, an upload lands on the host and survives
+replacing the container, an unwritable `UPLOAD_DIR` refuses to start, uploads-off
+serves no file routes, and killing Postgres turns the container unhealthy. It
+needs Docker and takes a couple of minutes. It's not in CI - CI stops at building
+the image for both architectures.
+
 ## The build order
 
 `web/dist.go` embeds the built frontend:

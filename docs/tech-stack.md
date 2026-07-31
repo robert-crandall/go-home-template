@@ -267,8 +267,9 @@ bundle. It is a build graph, and it has to be respected everywhere:
 - `make build` runs `bun run build` before `go build`. `make setup` does it once
   after clone, and the README's first instruction is `make setup`.
 - CI makes the `go` and `e2e` jobs depend on `web` and passes `web/build` to
-  them as an artifact. M4's `docker-build` job won't need it - the Dockerfile's own
-  `web-build` stage runs the same build inside the image (D8, D9).
+  them as an artifact. The `docker-build` job doesn't need it - the Dockerfile's
+  own `web-build` stage runs the same build inside the image, and
+  `.dockerignore` excludes `web/build` so a local one can't leak in (D8, D9).
 - `web/build/` is gitignored. Nothing generated is committed except
   `docs/openapi.json` and `schema.d.ts`, which are reviewable text.
 
@@ -489,7 +490,7 @@ reverse proxy on the host). The container speaks plain HTTP.
 ```
 web-build   --platform=$BUILDPLATFORM  oven/bun:1.3-alpine  bun install --frozen-lockfile && bun run build
 go-build    --platform=$BUILDPLATFORM  golang:1.26          CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build
-runtime                                distroless/static-debian12:nonroot
+runtime                                gcr.io/distroless/static-debian12:nonroot
 ```
 
 Both build stages are pinned to `$BUILDPLATFORM` so neither ever runs under QEMU;
@@ -528,27 +529,28 @@ all:
   against a real Postgres healthcheck, or a restart policy that tolerates a few
   crash-loops on reboot. The template can't choose this for you because it
   doesn't know whether Postgres is even a container on your box.
-- `distroless:nonroot` runs as UID 65532, and if Docker has to create a missing
-  bind-mount source on Linux it creates it root-owned. `files.NewService`
-  write-probes `UPLOAD_DIR` and refuses to start if it can't write, so the host
-  directory has to exist and be **writable by** UID 65532. Ownership is the
-  simplest way there (`chown 65532:65532`) but group permissions or an ACL work
-  too, and on Docker Desktop or rootless Docker the mapping differs and it may
-  need nothing at all.
+- **Only if your app stores files** - with `UPLOAD_DIR` unset there is no volume
+  to mount and this whole bullet is skippable. `distroless:nonroot` runs as UID
+  65532, and if Docker has to create a missing bind-mount source on Linux it
+  creates it root-owned. `files.NewService` write-probes `UPLOAD_DIR` and
+  refuses to start if it can't write, so the host directory has to exist and be
+  **writable by** UID 65532. Ownership is the simplest way there
+  (`chown 65532:65532`) but group permissions or an ACL work too, and on Docker
+  Desktop or rootless Docker the mapping differs and it may need nothing at all.
 
-That refusal is a feature, not an obstacle: it means a missing or unwritable
-volume is a startup crash instead of photos written into a container layer that
-the next deploy discards.
+That refusal is a feature, not an obstacle: once you have asked for uploads, a
+missing or unwritable volume is a startup crash instead of photos written into a
+container layer that the next deploy discards. Leaving `UPLOAD_DIR` unset is a
+different and deliberate choice - the file routes simply aren't served (D11) -
+and is not the same thing as configuring it badly.
 
 ### D9 - CI, CD, and Dependabot
 
 CI on every PR and push to main. The job graph matters because of the embed
 described in D4, and because publishing keys off CI's overall conclusion, so a
-job that doesn't gate the graph doesn't gate a deploy either. As of M2 the first
-four jobs exist and the "what it runs" column describes them as they are;
-`docker-build` is the design M4's containerization has to satisfy, and the
-publish, notification and Dependabot workflows below are likewise not written
-yet:
+job that doesn't gate the graph doesn't gate a deploy either. As of M4 all five
+jobs exist and the "what it runs" column describes them as they are; the publish,
+notification and Dependabot workflows below are not written yet:
 
 | Job | Needs | What it runs |
 |---|---|---|
@@ -702,9 +704,9 @@ release carrying a migration has already changed the schema by the time you
 notice - and with Watchtower on a mutable tag, that can happen while you're
 asleep. Recovering means restoring Postgres, which this template does not do for
 you. So the default has a precondition rather than a mitigation: **auto-merging
-majors assumes you already keep external, tested backups of both Postgres and
-`UPLOAD_DIR`.** If a repo built from this template doesn't, the fix is to change
-the default and gate majors, not to hope.
+majors assumes you already keep external, tested backups of Postgres** - and of
+`UPLOAD_DIR` too, if your app stores files. If a repo built from this template
+doesn't, the fix is to change the default and gate majors, not to hope.
 
 **Why `workflow_run` auto-merge instead of branch protection plus native
 auto-merge:** native auto-merge needs a required-status-check blocker on main,
@@ -778,6 +780,17 @@ which means `/api/tokens` exists on a fresh app:
   validates the pair (shape, P-256 sizes, and that the public key really derives
   from the private one) whenever *either* is set, so a half-configured app fails
   at startup rather than at send time. The browser half is not here; see below.
+- **File uploads** - registered only when `UPLOAD_DIR` is set. `cmd/server`
+  leaves `Deps.Files` nil otherwise and `RegisterRoutes` skips
+  `files.Register`, so an app that never stores files doesn't have to invent a
+  directory to satisfy a service it never calls. Set it and the old strictness
+  is unchanged: missing, not a directory, or unwritable is still a startup
+  crash, because the alternative is photos written into a container layer.
+  One consequence to know: `cmd/openapi` always builds a real files service
+  over a temp dir, so `docs/openapi.json` keeps describing the whole template
+  and an uploads-off deployment serves a *subset* of its own published spec.
+  That's deliberate - the committed spec is the template's contract, not a
+  per-deployment manifest.
 - **LLM** (`llm` package) - not wired. Add it when the app calls a model.
   `llm.New` fails at startup when no provider key is set, which is right for an
   app that uses it and wrong as a default for one that doesn't.
@@ -797,7 +810,7 @@ required ones filled in for local development.
 | `ADDR` | no | defaults to `:8080` |
 | `APP_ENV` | no | `production` turns on `Secure` cookies |
 | `ALLOW_OPEN_REGISTRATION` | no | default is first-user-only |
-| `UPLOAD_DIR` | yes | must already exist and be writable by UID 65532 |
+| `UPLOAD_DIR` | no | unset means the file routes aren't registered at all; set means it must already exist and be writable by UID 65532 |
 | `UPLOAD_MAX_BYTES` | no | defaults to 25 MiB |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | no | both keys or neither; one alone is a startup error |
 | `SESSION_SECRET` | no | read but unused by the foundation |
@@ -810,12 +823,12 @@ homelab template gets wrong by omission more often than by design:
 - **Backups.** Not in this template - I back up Postgres with the same thing
   that backs up everything else on the box, and a `make backup` here would be a
   worse copy of it. What the template owes you is the part that's easy to get
-  half right: there are **two** things to back up, a `pg_dump` of Postgres *and*
-  the `UPLOAD_DIR` tree, because file bytes live on disk and only their metadata
-  is in the database. Restore one without the other and you get rows pointing at
-  missing files, or orphaned files nobody can reach. Test the restore once
-  rather than assuming it, especially before turning on major auto-merge - see
-  D9.
+  half right: for an app *with* uploads there are **two** things to back up, a
+  `pg_dump` of Postgres *and* the `UPLOAD_DIR` tree, because file bytes live on
+  disk and only their metadata is in the database. Restore one without the other
+  and you get rows pointing at missing files, or orphaned files nobody can reach.
+  With `UPLOAD_DIR` unset there's only Postgres. Test the restore once rather
+  than assuming it, especially before turning on major auto-merge - see D9.
 - **Pulling the image.** GHCR packages are private by default, so the homelab
   host needs either `docker login ghcr.io` with a read-only PAT or the package
   set to public. The README covers both; pick one at setup time, not at 2am
