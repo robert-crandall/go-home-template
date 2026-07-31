@@ -395,9 +395,9 @@ Tailwind plugin from the stylesheet, with no `tailwind.config.js` at all:
 
 Theme selection is `data-theme` on `<html>`, persisted in `localStorage`, applied
 by a synchronous inline script in `app.html` that runs *before* the app boots.
-M3 shipped it (`web/src/lib/theme.svelte.ts`, plus the picker in
-`+layout.svelte`), and the shape is worth knowing because it's less code than it
-looks like it should be.
+M3 shipped it (`web/src/lib/theme.svelte.ts`, plus the picker, which M7 pulled out
+into `web/src/lib/components/ThemePicker.svelte`), and the shape is worth knowing
+because it's less code than it looks like it should be.
 
 The stored preference is three-way - `system`, `light`, `dark` - and **the
 attribute is only set for an explicit light or dark choice.** daisyUI compiles
@@ -433,22 +433,64 @@ and keep writing Tailwind.
 `btn-primary`). A hardcoded `bg-white` is a bug, because it survives the theme
 switch and looks broken in dark mode.
 
-### D6 - What the SPA does, which is almost nothing
+**Muted text has a floor, and it is `/60`.** Secondary text wants to be quieter
+than body text, and the obvious way to do that is `text-base-content/50` or
+`/40`. Both fail WCAG AA. Measured against daisyUI 5.7.4's stock light theme,
+where `base-100` is pure white and `base-content` is `oklch(21% .006 285.885)`:
+
+| Alpha | Contrast |     | Alpha | Contrast |
+| ----- | -------- | --- | ----- | -------- |
+| `/40` | 2.53:1   |     | `/60` | 4.64:1   |
+| `/45` | 2.92:1   |     | `/65` | 5.49:1   |
+| `/50` | 3.38:1   |     | `/70` | 6.54:1   |
+| `/55` | 3.95:1   |     | `/75` | 7.83:1   |
+
+AA wants 4.5:1 for body text, so `/60` is the lightest thing that passes and
+everything below it is decoration masquerading as text. Light is the binding
+theme - dark's `base-100` is much closer to its `base-content` at the same
+alpha - and darkening the token wouldn't rescue it either: over pure white, even
+pure black at 40% tops out at 2.85:1. The number is a property of the alpha, not
+of the color you picked.
+
+Related, and easy to reach for by mistake: `text-error` is a *surface* color,
+meant to be a background with `text-error-content` on it. On `base-100` it sits
+under 3:1, so red error text fails as body text while looking obviously red and
+therefore obviously fine. The paired `alert alert-error` clears AA. That is why
+every error the app shows is an alert rather than a line of red text, and
+`web/src/app.css` carries the table so the next person doesn't have to
+rediscover it.
+
+`text-primary` has the same shape of problem in the *dark* theme - 3.4:1 on
+`base-100`, against 8.3:1 in light - which is enough for a border or an icon (a
+non-text marker needs 3:1) and short of AA for a label. So the navigation shell
+marks the current destination with weight and a `base-200` background rather
+than primary text; see D6.
+
+### D6 - What the SPA does: a shell, and almost nothing in it
 
 The entire frontend:
 
 - `/login` - email and password. Surfaces the foundation's real errors rather
   than a status-code-to-message table of its own, so whatever the server refuses
   with is what the person reads. The Log in / Register pair is there only while
-  registration is open - see below.
-- `/` - guarded. Says hello to `user.email` and has a logout button. This is the
-  "hello world."
-- A theme picker in the layout, so it's on both screens and a signed-out visitor
-  can use it too. System / Light / Dark, in a `<select>` - see D5 for why the
-  control is three-way rather than a toggle.
+  registration is open - see below. It sits *outside* the navigation shell:
+  there is nowhere to navigate to when you're signed out.
+- A navigation shell around everything else - a sidebar on desktop, a hamburger
+  and a drawer on a phone. Its own section below.
+- `/` - guarded. Says hello. This is the "hello world," and it is now only a
+  greeting: the signed-in email and **Log out** moved into the shell's footer,
+  where every page gets them without writing them.
+- `/second` - guarded, and deliberately empty. It exists so the shell has
+  somewhere to navigate *to*; see below.
+- A theme picker, so it's on every screen and a signed-out visitor can use it
+  too. System / Light / Dark, in a `<select>` - see D5 for why the control is
+  three-way rather than a toggle. It lives in the shell's footer, bottom-left,
+  and `/login` places its own copy since it has no shell.
 - A route guard that calls `GET /api/auth/me` once on boot and redirects to
   `/login` on 401. It runs in `load`, not in the component, so a signed-out
-  visitor gets a redirect and never a frame of the greeting.
+  visitor gets a redirect and never a frame of the greeting. It's on the
+  shell's group layout rather than on each page, so a new page under
+  `routes/(app)/` is guarded by existing there.
 - One correction on top of that guard, in `+layout.svelte`. SvelteKit only
   writes the history entry for navigations it pushed itself, so a `load` that
   redirected during a Back or Forward rendered the right page and left the
@@ -458,6 +500,113 @@ The entire frontend:
   disagree puts the bar back. The E2E suite asserts both the content and the
   URL across history navigation in both directions; drop that hook and both
   assertions fail.
+
+**The navigation shell.** Adding a destination is one entry in one array:
+
+```ts
+// web/src/lib/nav.ts
+export const navItems: NavItem[] = [
+  { href: '/', label: 'Home' },
+  { href: '/second', label: 'Second page', group: 'Examples' }
+];
+```
+
+Nothing else holds a copy of the route list. The desktop sidebar, the phone
+drawer, and `web/tests/nav.spec.ts` all read that array, so a destination that
+renders in one place renders in all of them and the test extends itself when you
+add one. The test asserts the rendered links are *exactly* `navItems`, not
+merely that each one is present, so a link hardcoded into the shell - the thing
+"one entry in one array" is a promise against - fails the build.
+
+**`group` is a property of the entry, not a nested array.** A `NavGroup[]` reads
+better in isolation and makes the wrong thing true: a group would have to exist
+before a page could, and the rule stops being "one entry in one array" and
+becomes "one entry in one array, inside the right group, and create the group if
+it isn't there." `navSections()` walks the flat list once and starts a section
+whenever `group` changes. The cost is real and small: two runs of the same label
+separated by something else render as two headings rather than merging, and a
+typo makes a new group rather than an error. Both are visible immediately in the
+sidebar.
+
+Headings are `<h2>`, labelling the `<ul>` beneath them, and they are **not
+links and not collapsible.** A collapsible group hides destinations behind a
+click, which is the same failure the no-overflow-menu decision below avoids, and
+it needs state that has to persist across navigations to not be infuriating.
+
+Both layouts are one component (`AppShell.svelte`), and both navs carry
+`aria-label="Primary"` - safe because they are never exposed at once. The
+sidebar is `display: none` below `lg`; the drawer renders *nothing at all* until
+it opens, which also keeps a second copy of the footer out of the DOM, so
+`auth.spec.ts` can keep reaching for one email and one form without scoping.
+
+`currentHref` is prefix matching, not the exact match you reach for first, so
+`/notes/123` still marks a `/notes` destination; `/` is special-cased because
+it's a prefix of everything. That is not nested navigation - the shell renders
+exactly one flat level and a section's children are the section's problem.
+
+It resolves **one** destination for a pathname - longest match - rather than
+asking each entry independently whether it matches. Ask independently and a nav
+carrying both `/notes` and `/notes/archive` marks both of them on
+`/notes/archive`, and two entries in one flat array is precisely what this
+model makes easy. `nav.spec.ts` pins that case as a plain function call, since
+the template's own two destinations can't produce it in a browser.
+
+**The phone nav is a drawer, and it is a native `<dialog>`.** An earlier cut of
+this shell used a bottom bar with `flex-1` items and no overflow menu; it worked,
+and it also meant every destination competed for a share of 390px, so the honest
+answer past about six was truncated labels. A drawer scrolls instead, which
+costs nothing and stops the destination count from being a design constraint.
+
+`<dialog>` + `showModal()` because Escape, the backdrop, the focus trap, focus
+restoration, and inerting the page behind it are all native. The hand-rolled
+equivalent is roughly sixty lines of listener plumbing and is where this kind of
+component usually goes wrong. Two things it doesn't do: it doesn't close on
+client-side navigation, so the shell closes it in `afterNavigate` **and** on
+link click (tapping the link for the page you're already on may not navigate at
+all); and it doesn't know about the breakpoint. Rotating an iPad from portrait
+to landscape crosses 768 to 1024 with the drawer open, which is the one way the
+sidebar and the drawer can be on screen together - a modal offering the same
+links as the sidebar underneath it, and two landmarks both named "Primary". A
+`matchMedia` listener closes the drawer when that happens. Closing rather than
+`lg:hidden`, because hiding an *open* modal leaves an invisible thing holding
+focus and the top layer; closing hands focus back and clears it.
+
+`showModal()` is Safari 15.4+ (March 2022), which is the floor this shell
+assumes. Below it the drawer would render inline instead of as a modal - it is
+the one part of this change I have not been able to exercise on a real iOS
+device.
+
+There are **no icons** in the nav. A glyph per entry is a second decision per
+entry and a second thing to keep consistent; in a labelled vertical list it adds
+nothing a screen reader or a person needs. Removing them deleted a field.
+
+The sidebar is `sticky top-0 h-screen`, so a long page scrolls under it rather
+than scrolling it away, with the nav column scrolling on its own and the footer
+pinned to the bottom of the viewport.
+
+**The footer is the shell's, not the page's.** It carries the signed-in email,
+the theme picker, and **Log out**, bottom-left in both the sidebar and the
+drawer. Sign-out is something every signed-in app needs and no page should have
+to build, and it was the last thing keeping identity on `/`. The button owns its
+own failure state (`SignOutButton.svelte`), so the shell stays layout.
+
+The app name comes from `manifest.webmanifest`, read at build time
+(`web/src/lib/app.ts`), not from a string literal in a component. The manifest
+is already the canonical name - `make init` rewrites it along with everything
+else - and a literal in the shell would be a second place to forget.
+
+**What the shell deliberately doesn't have:** nested or collapsible navigation,
+breadcrumbs, a settings or account screen, per-item icons, a per-item "show this
+on a phone" flag, and any notion of a page header beyond whatever `<h1>` the
+page writes itself. Each of those is a real feature some app wants and no template
+can guess at.
+
+**`/second` is a demo destination and is meant to be deleted.** A shell with one
+destination doesn't demonstrate anything - you can't see the current-page marker
+move, and there's nothing for a group heading to sit above. It carries the one
+`group` in the template for that reason. It's a heading and a paragraph
+explaining itself, so deleting it is deleting one file plus one line
+of `navItems`.
 
 **Which refusals you actually see depends on `ALLOW_OPEN_REGISTRATION`, and an
 earlier draft of this decision got that wrong.** It listed "409 when the email is
@@ -509,10 +658,11 @@ gets, so it pins 403 and 401 and can't observe 409. `internal/app/api_test.go`
 covers 409 instead, opening the gate in-process against a real database - much
 cheaper than standing up a second binary and database just to see one string.
 
-**Logout can fail, and the page has to let it.** The foundation returns 500 and
-sends no clearing `Set-Cookie` when it couldn't revoke the session server-side,
-rather than clearing the cookie and pretending a live token is dead. So `/` must
-not clear its local auth state on a failed logout either - otherwise the button
+**Logout can fail, and the button has to let it.** The foundation returns 500
+and sends no clearing `Set-Cookie` when it couldn't revoke the session
+server-side, rather than clearing the cookie and pretending a live token is
+dead. So `SignOutButton` must not clear its local auth state on a failed logout
+either - otherwise the button
 looks like it worked while the cookie still signs you in on the next visit.
 
 That is the whole list. No file upload demo, no API token screen, no push
@@ -524,6 +674,11 @@ in D2. Login and hello world are the two that prove the whole stack works end to
 end: cookie auth, the generated client, the embedded SPA, deep-link fallback, and
 the styling layer. A third screen proves nothing new about the stack and costs
 every app that starts here.
+
+`/second` is the one exception, and it's an exception with a job: it is what
+makes the shell demonstrable rather than theoretical. It pays the same deletion
+tax as anything else, which is why it's kept to a heading and a paragraph that
+says so out loud.
 
 The template ships static PWA metadata (`manifest.webmanifest`, `icon-192.png`,
 `icon-512.png`, and the `theme-color` metas) because it's inert markup with no
@@ -774,6 +929,36 @@ dependency.
 M3 added a second spec rather than more steps to that one, because theming
 shares no state with the auth flow and a `theme.spec.ts` that never signs in
 can't perturb it. Its interesting step is the no-flash proof described in D5.
+
+M7 added `nav.spec.ts`, which does need a session, and that is where the shared
+first account stops being free. Registration is first-user-only in the E2E
+environment, so exactly one spec can register and `auth.spec.ts` asserts that it
+is the one that does. Playwright sorts spec files, so "auth runs first" was true
+by alphabet - which would have held until someone renamed a file, and then
+failed as `registration is closed` a long way from the cause. So the config
+splits that into two projects: `account`, which is just `auth.spec.ts`, and
+`chromium`, which is everything else and `dependencies: ['account']`. The order
+is now stated rather than inferred, running a single spec still gets an account
+because dependencies run too, and `nav.spec.ts` logs in without any
+"register if nobody has" fallback to get wrong.
+
+`nav.spec.ts` imports `navItems` from `$lib/nav` rather than naming
+destinations, so it clicks through whatever the shell is configured with, at
+both widths. That is deliberate beyond tidiness: the README tells you to delete
+`/second`, and a spec that had `/second` written in it would make following the
+README a red build.
+
+**`page.request` can't do the signing in.** The spec needs a session and the
+obvious way to get one is Playwright's API request context, which shares the
+browser's cookie jar. Under Bun - which is the runtime the suite runs on, per
+D4 - that throws `TypeError: "/api/auth/login" cannot be parsed as a URL` on any
+response carrying a `Set-Cookie`, which is exactly the responses a login makes.
+Cookieless requests are unaffected, which is why `theme.spec.ts` still fetches
+the manifest and its icons through `page.request` quite happily, and why this
+took a while to pin down: it presents as a bug in your own test file. The same
+calls pass under Node. `nav.spec.ts` signs in with the browser's own `fetch`
+through `page.evaluate` instead, which is both immune to this and closer to what
+the app does.
 
 Exactly one step is mocked, because a healthy server cannot produce what it
 checks: logout returning 500, and logout failing at the network layer. Both

@@ -11,7 +11,9 @@ frontend, the embed, and the build.
 
 [foundation]: https://github.com/robert-crandall/go-home-server
 
-See [`docs/tech-stack.md`](docs/tech-stack.md) for why each piece was chosen.
+See [`docs/tech-stack.md`](docs/tech-stack.md) for why each piece was chosen,
+and [`AGENTS.md`](AGENTS.md) for the working commands, conventions, and gotchas
+(coding agents read that one).
 
 ## Prerequisites
 
@@ -183,11 +185,14 @@ The input and output are structs, so the harness can infer their JSON schemas.
 For an app-specific tool, add the API route in `internal/app` first, regenerate
 the contract with `make spec`, then call that route from the tool.
 
-## Auth and the two screens
+## Auth and the screens
 
 The template ships the smallest thing that proves auth works end to end:
 `/login` (log in, plus register while registration is open) and a guarded `/`
-that greets you and offers a logout button. That's it - the rest is yours.
+that greets you, inside a navigation shell with one demo destination in it. The
+signed-in email, the theme picker and **Log out** live in the shell's footer
+rather than on the page, so every page you add gets them. That's it - the rest
+is yours.
 
 Three pieces make it work, and they're all small enough to read in a sitting:
 
@@ -199,10 +204,11 @@ Three pieces make it work, and they're all small enough to read in a sitting:
 - **`web/src/lib/auth.svelte.ts`** - a `$state` user and a cached boot promise.
   `ensure()` resolves once, from `GET /api/auth/me`; `signedIn()` and
   `signOut()` update it directly so a login doesn't cost a second round trip.
-- **The guards live in `+page.ts`, not the component.** SvelteKit doesn't render
-  a page until its `load` resolves, so a signed-out visitor gets a redirect
-  instead of a flash of the greeting. `/login` guards the other way and bounces
-  anyone already signed in.
+- **The guard lives in a `load`, not a component** - `web/src/routes/(app)/+layout.ts`,
+  which covers every page in the shell. SvelteKit doesn't render a page until
+  its `load` resolves, so a signed-out visitor gets a redirect instead of a
+  flash of the greeting. `/login` guards the other way, in its own `+page.ts`,
+  and bounces anyone already signed in.
 
 Errors are the server's words: `apiErrorMessage` reads huma's `errors[]` when
 they're there and its `detail` otherwise, so there's no status-code-to-message
@@ -265,13 +271,65 @@ come back as `?error=<code>` from a fixed vocabulary rather than as JSON, and
 the login page owns that wording; it's the one exception to "errors are the
 server's words", because a code isn't a sentence.
 
+## Adding a page
+
+Every signed-in page lives under `web/src/routes/(app)/`, which is the route
+group the navigation shell and the auth guard wrap. Adding a destination is two
+things:
+
+1. A `+page.svelte` under `web/src/routes/(app)/` - say `notes/+page.svelte`.
+2. One entry in `navItems` in `web/src/lib/nav.ts`:
+
+```ts
+export const navItems: NavItem[] = [
+  { href: '/', label: 'Home' },
+  { href: '/notes', label: 'Notes' }
+];
+```
+
+That's the whole thing. The desktop sidebar and the phone drawer both read that
+array, so there's no second list to update, and `web/tests/nav.spec.ts` reads it
+too - it asserts the rendered links are exactly `navItems` and that every one of
+them is reachable at both widths, so a new destination is covered the moment you
+add it, and a link hardcoded into the shell fails the build. The current
+destination is marked by prefix, so `/notes/123` still highlights **Notes**.
+
+An entry can carry an optional `group`, which puts a heading above it:
+
+```ts
+export const navItems: NavItem[] = [
+  { href: '/', label: 'Home' },
+  { href: '/notes', label: 'Notes', group: 'Writing' },
+  { href: '/drafts', label: 'Drafts', group: 'Writing' }
+];
+```
+
+The grouping is a property of the entry rather than a nested array, so a page
+never has to be added to a group before it can exist. Consecutive entries
+sharing a `group` become one section; headings are plain text, not links, and
+don't collapse. Ungrouped entries render with no heading, which is why a nav
+with no groups at all looks exactly like it did before.
+
+`/second` is a demo destination that exists so the shell has somewhere to
+navigate to. Delete `web/src/routes/(app)/second/` and its line in `navItems`
+when you have a real second page.
+
+On a phone the destinations live behind the hamburger in the header, in a
+drawer that closes when you pick one. There is no overflow menu and nothing is
+ever hidden: the drawer scrolls.
+
+The sidebar and drawer both end in a footer carrying the signed-in email, the
+theme picker, and **Log out** - so pages don't have to build sign-out for
+themselves.
+
 ## Theming and install metadata
 
-A System / Light / Dark picker sits in the layout, so it's on both screens and
-works signed out. The choice lands in `localStorage` and a synchronous inline
-script in `web/src/app.html` applies it before the app boots - so a reload, a
-browser restart, or a deep link all paint the right palette on the first frame,
-never the wrong one first.
+A System / Light / Dark picker sits in the navigation shell's footer - bottom
+of the sidebar on desktop, bottom of the drawer on a phone - and `/login` places
+its own copy, so it works signed out too. The choice lands in `localStorage` and a synchronous
+inline script in `web/src/app.html` applies it before the app boots - so a
+reload, a browser restart, or a deep link all paint the right palette on the
+first frame, never the wrong one first.
 
 The bit worth knowing if you edit it: `data-theme` is only set for an explicit
 light or dark choice. daisyUI scopes its dark rule to `:root:not([data-theme])`,
@@ -279,9 +337,10 @@ so **System** means no attribute and lets CSS decide, which is both flash-proof
 by construction and keeps following the OS live. Adding a fourth theme means
 four edits, and the fourth is easy to miss: the `themes:` list in
 `web/src/app.css`, the `Theme` union and the values `read()` accepts in
-`web/src/lib/theme.svelte.ts`, the `options` array in `+layout.svelte`, **and
-the inline script's own whitelist in `web/src/app.html`** - it can't import the
-TypeScript, so it repeats the valid values by hand.
+`web/src/lib/theme.svelte.ts`, the `options` array in
+`web/src/lib/components/ThemePicker.svelte`, **and the inline script's own
+whitelist in `web/src/app.html`** - it can't import the TypeScript, so it
+repeats the valid values by hand.
 
 `web/static/` carries `manifest.webmanifest` and two PNG icons, plus a
 `theme-color` meta pair, so a home-screen shortcut gets a real icon and a
