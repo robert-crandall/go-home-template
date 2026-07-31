@@ -34,12 +34,18 @@ func TestDistHasAppChunks(t *testing.T) {
 }
 
 // TestIndexHTMLAppliesThemeBeforeBody checks that the theme script survived into
-// the build and is still in <head>.
+// the build, is still in <head>, and is still a classic script.
 //
-// Position is the whole point: the script is what applies a saved theme before
-// the first paint, so moving it below <body> - or making it a module, which
-// defers it - reintroduces the flash of the wrong palette without breaking
-// anything a browser test that waits for the page would notice.
+// All three matter for the same reason: the script is what applies a saved theme
+// before the first paint. Moving it below <body> delays it, and `type="module"`
+// defers it to after parsing - either one reintroduces the flash of the wrong
+// palette without breaking anything a browser test that waits for the page would
+// notice.
+//
+// Not asserted: that the script precedes the stylesheet link. A render-blocking
+// stylesheet means nothing paints until the CSS has loaded, and a parser-blocking
+// inline script in <head> has run by then regardless of which came first, so the
+// ordering is a preference rather than a correctness property.
 func TestIndexHTMLAppliesThemeBeforeBody(t *testing.T) {
 	html := readDist(t, "index.html")
 
@@ -50,6 +56,17 @@ func TestIndexHTMLAppliesThemeBeforeBody(t *testing.T) {
 	if body := strings.Index(html, "<body"); body < 0 || script > body {
 		t.Error("the inline theme script is not in <head> - it has to run before the body parses")
 	}
+
+	// The opening tag of the script that contains the storage read.
+	open := strings.LastIndex(html[:script], "<script")
+	if open < 0 {
+		t.Fatal("the theme storage read is not inside a <script> tag")
+	}
+	tag := html[open:script]
+	if strings.Contains(tag, "type=\"module\"") || strings.Contains(tag, "type='module'") {
+		t.Error("the inline theme script is a module, so the browser defers it until after parsing - it has to be a classic script to run before the first paint")
+	}
+
 	if !strings.Contains(html, `rel="manifest"`) {
 		t.Error("index.html does not link the web manifest")
 	}

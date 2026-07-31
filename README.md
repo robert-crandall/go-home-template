@@ -111,15 +111,19 @@ The bit worth knowing if you edit it: `data-theme` is only set for an explicit
 light or dark choice. daisyUI scopes its dark rule to `:root:not([data-theme])`,
 so **System** means no attribute and lets CSS decide, which is both flash-proof
 by construction and keeps following the OS live. Adding a fourth theme means
-three edits: the `Theme` union in `web/src/lib/theme.svelte.ts` (and the value
-list its `read()` accepts), the `options` array in `+layout.svelte`, and the
-`themes:` list in `web/src/app.css`.
+four edits, and the fourth is easy to miss: the `themes:` list in
+`web/src/app.css`, the `Theme` union and the values `read()` accepts in
+`web/src/lib/theme.svelte.ts`, the `options` array in `+layout.svelte`, **and
+the inline script's own whitelist in `web/src/app.html`** - it can't import the
+TypeScript, so it repeats the valid values by hand.
 
-`web/static/` carries `manifest.webmanifest` and two PNG icons, so browsers
-offer "install" and mobile home screens get a real icon. Regenerate them from
-`icon.svg` if you change the artwork - the `rsvg-convert` command is in a
-comment at the top of that file. There's deliberately no service worker; see
-D6 in [`docs/tech-stack.md`](docs/tech-stack.md) for why.
+`web/static/` carries `manifest.webmanifest` and two PNG icons, plus a
+`theme-color` meta pair, so a home-screen shortcut gets a real icon and a
+sensibly tinted title bar. Regenerate the PNGs from `icon.svg` if you change the
+artwork - the `rsvg-convert` command is in a comment at the top of that file.
+There's deliberately no service worker, which also means no install prompt and
+no offline support; see D6 in [`docs/tech-stack.md`](docs/tech-stack.md) for
+why.
 
 ## Testing
 

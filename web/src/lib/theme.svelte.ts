@@ -11,7 +11,10 @@
  *
  * The other half of this lives in `app.html`, as an inline script that applies
  * the stored choice before the app boots. Without it the page paints the light
- * default for a frame and then snaps to dark.
+ * default for a frame and then snaps to dark. That script can't import this
+ * file - it has to run before any module loads - so the storage key and the set
+ * of valid values below are duplicated there by hand. Adding a theme means
+ * editing both.
  */
 
 const KEY = 'theme';

@@ -82,25 +82,34 @@ test('a chosen theme applies before the app boots, and survives reload, restart,
     //     hydration instead. Then the reload step passes - and this step is the
     //     only one in the file that fails. That difference is the flash.
     //
-    // The abort count is asserted for the same reason. Matching on `**/*.js`
-    // rather than SvelteKit's current output layout already avoids the obvious
-    // trap, but if a build change ever moved the app's code somewhere this
-    // pattern misses, hydration would quietly run and set the right theme from
-    // localStorage - and this step would pass while proving nothing.
-    let aborted = 0;
+    // Two things make the abort non-vacuous, and they check different halves:
+    //
+    //   - At least one blocked URL is under `_app/immutable/entry/`, which is
+    //     the app's boot pair (`start` and `app`, imported dynamically from a
+    //     script in <body>). Counting aborts alone would be satisfied by any
+    //     stray `.js` while the app booted normally underneath.
+    //   - The theme picker isn't in the DOM. It only exists once Svelte mounts
+    //     the layout, so its absence is direct evidence that no application
+    //     code ran - not an inference from what the network did.
+    const abortedUrls: string[] = [];
     await page.route('**/*.js', (route) => {
-      aborted += 1;
+      abortedUrls.push(route.request().url());
       return route.abort();
     });
 
     await page.goto('/login', { waitUntil: 'domcontentloaded' });
 
-    expect(aborted, 'no scripts were blocked, so this step proved nothing').toBeGreaterThan(0);
+    expect(
+      abortedUrls.filter((url) => url.includes('/_app/immutable/entry/')),
+      "the app's entry chunks were not blocked, so this step proved nothing"
+    ).not.toHaveLength(0);
+    await expect(themeSelect(page), 'the app mounted, so this is not a no-JS page').toHaveCount(0);
+
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     // Compared against the value recorded above rather than a literal: daisyUI
     // emits oklch(), and how a browser serializes that is not this suite's
     // business.
-    await expect.poll(() => bodyBackground(page)).toBe(dark);
+    expect(await bodyBackground(page)).toBe(dark);
 
     await page.unroute('**/*.js');
   });

@@ -37,7 +37,14 @@
       web/tests/theme.spec.ts proves this script does the work, by aborting every
       script request and checking the theme is right anyway.
 
-      See web/src/lib/theme.svelte.ts for the other half.
+      See web/src/lib/theme.svelte.ts for the other half. The two files
+      duplicate one thing on purpose: the storage key and the set of valid
+      values. This script can't import the TypeScript - it has to run before any
+      module loads, which is the entire point - so **adding a theme means
+      editing the whitelist below as well.** The whitelist itself is earning its
+      place rather than being paranoia: a stale or hand-edited value would
+      otherwise be written straight onto the element, and a `data-theme` daisyUI
+      has never heard of matches no theme rule at all.
     -->
     <script>
       try {
