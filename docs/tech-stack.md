@@ -1044,6 +1044,24 @@ Dependabot covers four ecosystems weekly: `gomod` (`/`), `bun` (`/web`),
 into one PR per ecosystem; majors come as standalone PRs so they're at least
 legible.
 
+There is exactly one exception to "majors auto-merge", and it is `typescript`,
+held below 7 in the `bun` ecosystem. TypeScript 7 is the native rewrite, and it
+drops the JS compiler API that this repo's frontend toolchain still calls into.
+`svelte-check` refuses to start under it outright, and `openapi-typescript`
+crashes on `ts.factory` being undefined, which takes `make spec` down with it.
+Both tools are already at their latest release, so there was nothing to bump
+alongside it: TS7 simply cannot be consumed here yet. The bound is `>=7.0.0`
+rather than "ignore majors", which reads as the specific, removable hold it is,
+and which still lets 6.x minors flow through the group. It covers 8 and later on
+the assumption those stay native; whoever deletes it should re-check both tools
+first.
+
+The frontend therefore sits on TypeScript 6, the last version with the classic
+API. One honest caveat: `openapi-typescript` declares its peer as `^5.x`, so
+this is outside its stated range. It works because the parts it touches are all
+still there in 6, and the `spec` job regenerates `schema.d.ts` on every pull
+request, so the day that stops being true is the day CI says so.
+
 The foundation's `dependabot-auto-merge.yml` is copied with **two** changes.
 
 The first is a restatement, and it comes with a correction to this ADR. That
