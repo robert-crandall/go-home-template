@@ -75,7 +75,11 @@ wait_for_health() {
 		[ "$status" = "$want" ] && return 0
 		sleep 1
 	done
-	docker logs "$name" 2>&1 | tail -20 >&2
+	# Best-effort: under `set -euo pipefail` a failing `docker logs` (the
+	# container is gone, which is exactly the `status=gone` case above) would
+	# abort the script here and swallow the die message below - the one piece of
+	# output that says which check failed and why.
+	docker logs "$name" 2>&1 | tail -20 >&2 || true
 	die "$name never reached '$want' (last status: $status)"
 }
 

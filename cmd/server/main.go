@@ -28,12 +28,12 @@ import (
 
 func main() {
 	// Subcommands are dispatched before anything else touches config or the
-	// database - see healthcheck.go. An unrecognized argument is an error
-	// rather than "ignore it and boot": a typo'd HEALTHCHECK would otherwise
-	// start a second full server inside the container, migrations and all, on
-	// every probe interval.
+	// database - see healthcheck.go. Anything other than exactly one
+	// `healthcheck` argument is an error rather than "ignore it and boot": a
+	// typo'd HEALTHCHECK would otherwise start a second full server inside the
+	// container, migrations and all, on every probe interval.
 	if len(os.Args) > 1 {
-		if os.Args[1] != "healthcheck" {
+		if len(os.Args) != 2 || os.Args[1] != "healthcheck" {
 			fmt.Fprintf(os.Stderr, "usage: %s [healthcheck]\n", os.Args[0])
 			os.Exit(2)
 		}
