@@ -443,7 +443,7 @@ The entire frontend:
   visitor gets a redirect and never a frame of the greeting.
 - One correction on top of that guard, in `+layout.svelte`. SvelteKit only
   writes the history entry for navigations it pushed itself, so a `load` that
-  redirects during a Back or Forward rendered the right page and left the
+  redirected during a Back or Forward rendered the right page and left the
   address bar on the entry you popped to - the greeting under `/login`, the
   login form under `/` (#18). An `afterNavigate` that compares `page.url` to
   `location.href` and calls `$app/navigation`'s `replaceState` when they

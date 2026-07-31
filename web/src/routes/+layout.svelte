@@ -16,10 +16,10 @@
    * Put the address bar back where the rendered page actually is.
    *
    * SvelteKit only writes the history entry for navigations it pushed itself:
-   * `navigate()` recurses with the same `popped` object when a `load` throws
-   * `redirect()`, and the history write below it is behind `if (!popped)`. So a
-   * Back onto a route whose guard bounces renders the redirect target under the
-   * URL you popped to - the greeting at `/login`, or the login form at `/`.
+   * in 2.70.1, `navigate()` recurses with the same `popped` object when a `load`
+   * throws `redirect()`, and the history write below it is behind `if (!popped)`.
+   * So a Back onto a route whose guard bounces renders the redirect target under
+   * the URL you popped to - the greeting at `/login`, or the login form at `/`.
    * Cosmetic, since the content always matches the real auth state, but an
    * address bar that lies is still a lie.
    *
