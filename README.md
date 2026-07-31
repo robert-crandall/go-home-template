@@ -11,7 +11,9 @@ frontend, the embed, and the build.
 
 [foundation]: https://github.com/robert-crandall/go-home-server
 
-See [`docs/tech-stack.md`](docs/tech-stack.md) for why each piece was chosen.
+See [`docs/tech-stack.md`](docs/tech-stack.md) for why each piece was chosen,
+and [`AGENTS.md`](AGENTS.md) for the working commands, conventions, and gotchas
+(coding agents read that one).
 
 ## Prerequisites
 
