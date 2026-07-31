@@ -19,6 +19,14 @@ import (
 // also match inside `data-type`, since a hyphen is a word boundary.
 var moduleAttr = regexp.MustCompile(`(?i)(?:^|\s)type\s*=\s*("module"|'module'|module\b)`)
 
+// storageRead matches the inline script's read of the saved theme in either
+// quote style. Pinning one style would make the test fail on a formatting
+// change rather than a behavior change - and this is a template, so a fork that
+// adds Prettier (which prefers double quotes) would hit a Go test failure in a
+// file it never touched. Which quote the script uses is not what this test is
+// about; that it reads the preference at all is.
+var storageRead = regexp.MustCompile(`localStorage\.getItem\((?:'theme'|"theme")\)`)
+
 // TestDistHasIndex guards the mistake server.New panics on: a missing fs.Sub,
 // which leaves index.html buried under build/ instead of at the root.
 func TestDistHasIndex(t *testing.T) {
@@ -58,22 +66,23 @@ func TestDistHasAppChunks(t *testing.T) {
 func TestIndexHTMLAppliesThemeBeforeBody(t *testing.T) {
 	html := readDist(t, "index.html")
 
-	script := strings.Index(html, "localStorage.getItem('theme')")
-	if script < 0 {
+	script := storageRead.FindStringIndex(html)
+	if script == nil {
 		t.Fatal("index.html has no inline theme script - a saved theme now applies only after the app boots, which is a frame of the wrong palette")
 	}
-	if body := strings.Index(html, "<body"); body < 0 || script > body {
+	read := script[0]
+	if body := strings.Index(html, "<body"); body < 0 || read > body {
 		t.Error("the inline theme script is not in <head> - it has to run before the body parses")
 	}
 
 	// The opening tag of the script that contains the storage read - bounded at
 	// its `>` rather than running to the read itself, so JS in the script body
 	// can never be mistaken for an attribute.
-	open := strings.LastIndex(html[:script], "<script")
+	open := strings.LastIndex(html[:read], "<script")
 	if open < 0 {
 		t.Fatal("the theme storage read is not inside a <script> tag")
 	}
-	close := strings.Index(html[open:script], ">")
+	close := strings.Index(html[open:read], ">")
 	if close < 0 {
 		t.Fatal("the theme script's opening tag is unterminated")
 	}
