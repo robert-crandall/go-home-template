@@ -214,7 +214,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/you/myapp:late
 | `UPLOAD_DIR` | no | Where file uploads are written. Unset disables them entirely - see below. |
 | `UPLOAD_MAX_BYTES` | no | Per-upload size cap. |
 | `ALLOW_OPEN_REGISTRATION` | no | Default false: the first user registers, then registration closes. |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | no | Web push. Set both or neither; one alone is a startup error. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | no | Web push, off unless set. All three together or none: one key alone is a startup error, and so is a missing or malformed subject (it must be a `mailto:` or `https:` URL). |
 
 `APP_ENV=production` means **nobody can log in over plain HTTP** - a `Secure`
 cookie is dropped by the browser. Put TLS termination in front of it, or leave
