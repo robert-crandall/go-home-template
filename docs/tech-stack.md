@@ -272,10 +272,11 @@ carrying the one-year header.
 
 Every header in that table comes from a version-pinned dependency rather than
 from code in this repo, so a bump can change any of it. `TestSPACacheHeaders`
-pins the two rows a deploy depends on - the `index.html` fallback, which must
-carry `no-cache` or `no-store`, and the `_app/immutable/` prefix, which must not
-- and see D6 for why those two. The rest of the table is
-a one-off measurement, true when written and not enforced.
+pins the two rows a deploy depends on, and D6 says why those two. The
+`index.html` fallback must carry `no-cache` or `no-store`. Everything under
+`_app/immutable/` must carry `immutable` with a long `max-age`, must *not* carry
+`no-cache` or `no-store`, and must have a content-hashed filename. The rest of
+the table is a one-off measurement, true when written and not enforced.
 
 `no-cache` is the right directive here and `must-revalidate` would be redundant:
 it already means "store, but revalidate before use". `serveIndex` passes a zero
