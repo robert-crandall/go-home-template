@@ -99,6 +99,28 @@ Registration is gated by `ALLOW_OPEN_REGISTRATION`. It defaults to `false`,
 which means "the first account only" - fine for a single-user app, which is what
 this template is shaped for. Set it to `true` if you want anyone to sign up.
 
+## Theming and install metadata
+
+A System / Light / Dark picker sits in the layout, so it's on both screens and
+works signed out. The choice lands in `localStorage` and a synchronous inline
+script in `web/src/app.html` applies it before the app boots - so a reload, a
+browser restart, or a deep link all paint the right palette on the first frame,
+never the wrong one first.
+
+The bit worth knowing if you edit it: `data-theme` is only set for an explicit
+light or dark choice. daisyUI scopes its dark rule to `:root:not([data-theme])`,
+so **System** means no attribute and lets CSS decide, which is both flash-proof
+by construction and keeps following the OS live. Adding a fourth theme means
+three edits: the `Theme` union in `web/src/lib/theme.svelte.ts` (and the value
+list its `read()` accepts), the `options` array in `+layout.svelte`, and the
+`themes:` list in `web/src/app.css`.
+
+`web/static/` carries `manifest.webmanifest` and two PNG icons, so browsers
+offer "install" and mobile home screens get a real icon. Regenerate them from
+`icon.svg` if you change the artwork - the `rsvg-convert` command is in a
+comment at the top of that file. There's deliberately no service worker; see
+D6 in [`docs/tech-stack.md`](docs/tech-stack.md) for why.
+
 ## Testing
 
 ```sh
