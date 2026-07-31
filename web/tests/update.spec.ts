@@ -34,7 +34,14 @@ async function interceptVersionChecks(page: Page, body: string) {
     checks.count += 1;
     if (answered) return route.continue();
     answered = true;
-    return route.fulfill({ contentType: 'application/json', body });
+    // Same headers the real server sends for this file, so the stand-in is a
+    // stand-in. Nothing here depends on it: kit's check() sets `cache-control:
+    // no-cache` on the request, so the browser revalidates either way.
+    return route.fulfill({
+      contentType: 'application/json',
+      headers: { 'cache-control': 'no-cache' },
+      body
+    });
   });
   return checks;
 }
