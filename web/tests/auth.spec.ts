@@ -67,15 +67,26 @@ async function watchForGreetingRender(page: Page) {
 const greetingEverRendered = (page: Page) =>
   page.evaluate((flag) => sessionStorage.getItem(flag) === 'true', RENDER_FLAG);
 
-async function submitCredentials(page: Page, tab: 'Log in' | 'Register', password: string) {
+async function chooseMode(page: Page, tab: 'Log in' | 'Register') {
   const toggle = modeToggle(page).getByRole('button', { name: tab, exact: true });
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-  await page.getByLabel('Email').fill(EMAIL);
+}
+
+/**
+ * Fills and submits whatever form is on screen. Deliberately separate from
+ * `chooseMode`: once an account exists the toggle isn't rendered at all, so a
+ * helper that always reached for it could only ever drive the open case.
+ */
+async function submitCredentials(
+  page: Page,
+  submit: 'Log in' | 'Create account',
+  email: string,
+  password: string
+) {
+  await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
-  await credentialsForm(page)
-    .getByRole('button', { name: tab === 'Log in' ? 'Log in' : 'Create account' })
-    .click();
+  await credentialsForm(page).getByRole('button', { name: submit }).click();
 }
 
 test('register, stay signed in across reloads, log out, and log back in', async ({ page }) => {
@@ -106,7 +117,20 @@ test('register, stay signed in across reloads, log out, and log back in', async 
   });
 
   await test.step('registering the first account signs you in', async () => {
-    await submitCredentials(page, 'Register', PASSWORD);
+    // Registration is open - there is no account yet - so the page opens on the
+    // register form rather than making you find it.
+    await expect(
+      modeToggle(page).getByRole('button', { name: 'Register', exact: true })
+    ).toHaveAttribute('aria-pressed', 'true');
+
+    // The pair still works both ways, which is what an app running with
+    // ALLOW_OPEN_REGISTRATION=true depends on: for it, open is permanent and
+    // log in has to stay reachable.
+    await chooseMode(page, 'Log in');
+    await expect(credentialsForm(page).getByRole('button', { name: 'Log in' })).toBeVisible();
+    await chooseMode(page, 'Register');
+
+    await submitCredentials(page, 'Create account', EMAIL, PASSWORD);
     await expect(page).toHaveURL(/\/$/);
     await expect(greeting(page)).toBeVisible();
     await expect(page.getByText(EMAIL)).toBeVisible();
@@ -197,22 +221,51 @@ test('register, stay signed in across reloads, log out, and log back in', async 
   await test.step('a wrong password shows the server error inline', async () => {
     // A real email and a password long enough to clear both the browser's
     // minlength and huma's 422, so the 401 is what actually comes back.
-    await submitCredentials(page, 'Log in', 'wrong-but-long-enough');
+    await submitCredentials(page, 'Log in', EMAIL, 'wrong-but-long-enough');
     await expect(alert(page)).toHaveText('invalid email or password');
     await expect(page).toHaveURL(/\/login$/);
   });
 
-  await test.step('a second registration is refused, in the server’s words', async () => {
-    await modeToggle(page).getByRole('button', { name: 'Register', exact: true }).click();
-    await page.getByLabel('Email').fill('second@example.com');
-    await page.getByLabel('Password').fill(PASSWORD);
-    await page.getByRole('button', { name: 'Create account' }).click();
+  await test.step('with an account on file, /login offers no way to register', async () => {
+    // The point of the change: the gate is closed for the rest of this app's
+    // life, so the control that could only ever produce "registration is
+    // closed" is not on the page at all.
+    await expect(modeToggle(page)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Create account' })).toHaveCount(0);
+  });
+
+  await test.step('a registration the server refuses still says so', async () => {
+    // The state is advisory - under the default gate the register handler
+    // re-checks under a lock - so the page can be holding a
+    // `registrationOpen: true` that stopped being true, and has to render the
+    // refusal rather than assume it can't happen. Stubbing the state is the
+    // only way to reach that here, since the real gate has been closed since
+    // the first account.
+    //
+    // The stub goes in before the navigation, because `load` runs once.
+    await page.route('**/api/app', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ registrationOpen: true })
+      })
+    );
+    await page.reload();
+
+    await chooseMode(page, 'Register');
+    await submitCredentials(page, 'Create account', 'second@example.com', PASSWORD);
     await expect(alert(page)).toHaveText('registration is closed');
     await expect(page).toHaveURL(/\/login$/);
+
+    // Back to the real state, so the last step tests the app rather than the
+    // stub.
+    await page.unroute('**/api/app');
+    await page.reload();
+    await expect(modeToggle(page)).toHaveCount(0);
   });
 
   await test.step('logging back in works', async () => {
-    await submitCredentials(page, 'Log in', PASSWORD);
+    await submitCredentials(page, 'Log in', EMAIL, PASSWORD);
     await expect(page).toHaveURL(/\/$/);
     await expect(greeting(page)).toBeVisible();
   });

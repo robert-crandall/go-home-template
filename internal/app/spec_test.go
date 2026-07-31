@@ -36,7 +36,7 @@ func TestSpecDescribesTheContract(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// Every operation the foundation registers, as path + method. Path-only
+	// Every operation this template registers, as path + method. Path-only
 	// presence isn't enough: /api/files serves both GET and POST, so a
 	// foundation bump that dropped only the POST would leave the path behind
 	// and a shrunken spec would sail through the drift check, because both
@@ -50,6 +50,8 @@ func TestSpecDescribesTheContract(t *testing.T) {
 		path, method string
 		codes        []string
 	}{
+		// The template's own route. Everything below it is the foundation's.
+		{"/api/app", "get", []string{"500"}},
 		{"/api/auth/register", "post", []string{"403", "409", "422"}},
 		{"/api/auth/login", "post", []string{"401"}},
 		{"/api/auth/logout", "post", nil},

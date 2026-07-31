@@ -44,6 +44,28 @@
         ],
         "type": "object"
       },
+      "AppState": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "examples": [
+              "https://example.com/schemas/AppState.json"
+            ],
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "registrationOpen": {
+            "description": "Whether registration is currently accepted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "registrationOpen"
+        ],
+        "type": "object"
+      },
       "CreateTokenInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -422,6 +444,36 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/app": {
+      "get": {
+        "description": "State the SPA needs before anyone has signed in.",
+        "operationId": "get-app-state",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppState"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [],
+        "summary": "App state"
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "login",
