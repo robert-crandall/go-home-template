@@ -116,6 +116,9 @@ func TestInitScanCatchesLeftoverNextToADR(t *testing.T) {
 		"code.example/acme/other-scan-target",
 	)
 	name := differentValue(templateName, "Scan Target", "Other Scan Target")
+	if templateName == templateSlug {
+		name = path.Base(module)
+	}
 
 	const neighbor = "docs/tech-stack-neighbor.md"
 	if err := os.WriteFile(filepath.Join(repo, neighbor), []byte("neutral before rename\n"), 0o644); err != nil {
