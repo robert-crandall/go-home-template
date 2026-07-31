@@ -140,9 +140,11 @@ func TestPublishPlan(t *testing.T) {
 			want: map[string]string{"publish": "false", "promote_main": "false"},
 		},
 		{
-			// A pull_request run's head_sha is a throwaway merge commit that
-			// exists on no branch. It can never equal the branch tip, but rely
-			// on the explicit event check rather than on that coincidence.
+			// A pull_request run's head_sha is the PR branch's tip commit, not
+			// a merge commit - so it CAN equal the branch tip, which is why
+			// this case deliberately sets them equal. The event check is the
+			// only thing refusing here, and that is the point: open a PR from
+			// a branch pointing at main and everything else passes.
 			name: "workflow_run/pull_request CI refuses",
 			env: map[string]string{
 				"EVENT_NAME": "workflow_run", "REPOSITORY": repo,

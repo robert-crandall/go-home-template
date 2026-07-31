@@ -102,12 +102,19 @@ workflow_dispatch)
 
 workflow_run)
 	# CI finished on main. Publish only if it finished green, only if it was a
-	# real push (a pull_request run's head is a merge commit that exists nowhere
-	# on main), and only if main has not moved since.
+	# real push, and only if main has not moved since.
 	#
-	# That last check is the whole point of this branch. Two merges in quick
-	# succession start two publish runs, and without it the older one can finish
-	# last and quietly drag :main backwards onto older code.
+	# The event check is doing real work. A pull_request run's head_sha is the
+	# PR branch's tip commit - measured: PR #24's CI run reported head_sha
+	# cfb2e35, which is exactly the PR's headRefOid, single parent, sitting on
+	# the branch. It is NOT a merge commit, so it can perfectly well equal
+	# main's tip: open a PR from a branch that points at main and the tip
+	# comparison below passes on its own. Without the event check that green PR
+	# run would publish.
+	#
+	# The tip check is the other half. Two merges in quick succession start two
+	# publish runs, and without it the older one can finish last and quietly
+	# drag :main backwards onto older code.
 	if [[ "$RUN_EVENT" == "push" && "$RUN_CONCLUSION" == "success" && "$RUN_HEAD_SHA" == "$BRANCH_TIP" && -n "$RUN_HEAD_SHA" ]]; then
 		publish=true
 		promote_main=true
