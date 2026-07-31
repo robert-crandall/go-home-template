@@ -692,7 +692,16 @@ correctness problem at any width.)
 So `build` pushes only `:sha-<sha>`, which is per-commit and cannot collide, and
 a `promote` job re-reads the branch tip afterwards and only then moves `:main`
 with `docker buildx imagetools create` - a registry-side manifest copy of an
-image that already exists, so no rebuild and no local daemon. `promote` carries
+image that already exists, so no rebuild and no local daemon.
+
+That last part is measured, not assumed. A probe pushed a two-platform image,
+then ran `imagetools create` on a *separate* runner with no
+`docker/setup-buildx-action` and no builder set up: it logged `copying sha256:…`
+then `pushing`, finished in 1.7s, and produced an index carrying both
+`linux/amd64` and `linux/arm64`. The source and promoted manifests hash
+identically, so it really is the same manifest rather than a rebuild - which is
+also why `promote` doesn't need a buildx builder, only the CLI plugin the runner
+image already ships. `promote` carries
 a job-level `concurrency` group of its own (`cancel-in-progress: false`). That
 is not the workflow-wide concurrency this ADR rejects above; it is narrower, and
 it's worth being precise about what it buys:
