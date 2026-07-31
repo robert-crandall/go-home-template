@@ -9,8 +9,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/robert-crandall/go-home-server/auth"
 	"github.com/robert-crandall/go-home-server/config"
@@ -25,6 +27,19 @@ import (
 )
 
 func main() {
+	// Subcommands are dispatched before anything else touches config or the
+	// database - see healthcheck.go. An unrecognized argument is an error
+	// rather than "ignore it and boot": a typo'd HEALTHCHECK would otherwise
+	// start a second full server inside the container, migrations and all, on
+	// every probe interval.
+	if len(os.Args) > 1 {
+		if os.Args[1] != "healthcheck" {
+			fmt.Fprintf(os.Stderr, "usage: %s [healthcheck]\n", os.Args[0])
+			os.Exit(2)
+		}
+		os.Exit(runHealthCheck(probeURL(os.Getenv("ADDR"))))
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config: %v", err)
@@ -62,15 +77,21 @@ func main() {
 		log.Fatalf("notify: %v", err)
 	}
 
-	// A missing or unwritable upload directory is fatal on purpose: the
-	// alternative is writing uploads to a container layer that gets thrown away
-	// on the next deploy.
-	filesSvc, err := files.NewService(pool, files.Options{
-		Dir:      cfg.UploadDir,
-		MaxBytes: cfg.UploadMaxBytes,
-	})
-	if err != nil {
-		log.Fatal(err)
+	// Uploads are optional. An app that never stores files leaves UPLOAD_DIR
+	// unset and simply doesn't serve the file routes - see RegisterRoutes.
+	//
+	// When it IS set, a missing or unwritable directory is fatal on purpose:
+	// the alternative is writing uploads to a container layer that gets thrown
+	// away on the next deploy.
+	var filesSvc *files.Service
+	if cfg.UploadDir != "" {
+		filesSvc, err = files.NewService(pool, files.Options{
+			Dir:      cfg.UploadDir,
+			MaxBytes: cfg.UploadMaxBytes,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	srv := server.New(server.Options{
@@ -83,8 +104,10 @@ func main() {
 		HumaConfig:  authSvc.TokenHumaConfig,
 	})
 
-	// Shared with cmd/openapi, so the committed spec always describes the routes
-	// this binary actually serves.
+	// Shared with cmd/openapi, which is what keeps the committed spec honest
+	// about what RegisterRoutes mounts. Not a per-deployment manifest, though:
+	// cmd/openapi always passes a real files service, so with UPLOAD_DIR unset
+	// this binary serves a subset of the spec it ships.
 	app.RegisterRoutes(srv.API, app.Deps{
 		Auth:   authSvc,
 		Notify: notifySvc,

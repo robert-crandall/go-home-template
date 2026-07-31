@@ -155,3 +155,31 @@ jobs:
           name: playwright-report
           path: web/playwright-report
           retention-days: 7
+
+  # The image the homelab pulls, built for both architectures a homelab is
+  # plausibly running. No `needs`: the Dockerfile builds the SPA in its own
+  # stage, because the image has to be reproducible from a clean checkout by
+  # someone who never ran the `web` job.
+  #
+  # setup-buildx is required and setup-qemu is not, which looks backwards.
+  # Emulation isn't needed because both build stages are pinned to
+  # $BUILDPLATFORM and the runtime stage has no RUN - nothing ever executes a
+  # target-arch binary. But the default `docker` driver can't export a manifest
+  # list, so a multi-platform build fails without a `docker-container` builder.
+  # Don't "fix" the missing QEMU step; do notice if someone adds a RUN to the
+  # runtime stage.
+  #
+  # Cache only, no output: a multi-platform result isn't --load-able into the
+  # runner's daemon, so there is nothing to hand downstream. Publishing is M5.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

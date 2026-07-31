@@ -7,7 +7,7 @@ APP_MODULE ?= github.com/robert-crandall/go-home-template
 APP_NAME   ?= Go Home Template
 APP_SLUG   ?= go-home-template
 
-.PHONY: help init setup build run dev test check spec e2e clean
+.PHONY: help init setup build run dev test check spec e2e docker-smoke clean
 
 # So a frontend build that fails halfway doesn't leave an index.html behind that
 # makes the target below look satisfied.
@@ -64,6 +64,11 @@ spec: ## Regenerate docs/openapi.json and the API types from the routes
 # database to exist; the script resets its schema on every run.
 e2e: ## Run the browser tests against the real binary
 	@scripts/e2e.sh
+
+# Builds the real image and proves each of M4's acceptance criteria against it.
+# Not in CI on purpose - see the script's header.
+docker-smoke: ## Build the container image and smoke-test it against a throwaway Postgres
+	@scripts/docker-smoke.sh
 
 clean: ## Remove build output
 	rm -rf bin .bin web/build web/.svelte-kit

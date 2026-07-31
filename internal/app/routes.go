@@ -28,7 +28,10 @@ const (
 type Deps struct {
 	Auth   *auth.Service
 	Notify *notify.Service
-	Files  *files.Service
+	// Files is nil for an app that doesn't store files. cmd/server leaves it
+	// nil when UPLOAD_DIR is unset, and RegisterRoutes then mounts no file
+	// endpoints at all.
+	Files *files.Service
 }
 
 // RegisterRoutes mounts every operation on the shared huma API.
@@ -45,7 +48,13 @@ func RegisterRoutes(api huma.API, deps Deps) {
 		return u.ID, err
 	}
 	notify.Register(api, deps.Notify, currentUser)
-	files.Register(api, deps.Files, currentUser)
+
+	// Uploads are optional. cmd/openapi always passes a real files service, so
+	// the committed spec keeps describing the whole template; a deployment with
+	// UPLOAD_DIR unset serves a subset of it.
+	if deps.Files != nil {
+		files.Register(api, deps.Files, currentUser)
+	}
 
 	// Add your app's own routes here.
 }
