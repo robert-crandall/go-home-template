@@ -924,24 +924,34 @@ legible.
 
 The foundation's `dependabot-auto-merge.yml` is copied with **two** changes.
 
-The first is a repair. That file's two guards are meant to make it **race-safe**:
-skip if main advanced after CI ran, and merge with `--match-head-commit` so a
-Dependabot force-push after CI can't sneak an untested tip into main. The second
-works as written. The first reads the base sha CI validated from
-`github.event.workflow_run.pull_requests[0].base.sha`, and **that field is empty
-here** - measured, all 8 of the most recent `pull_request` CI runs on this repo
-carry an empty `pull_requests` array - so the guard was a comment, not a check.
-Copying it verbatim would have inherited a protection that never fires, in the
-one repo where merging an untested tree also *deploys* it.
+The first is a restatement, and it comes with a correction to this ADR. That
+file's two guards make it **race-safe**: skip if main advanced after CI ran, and
+merge with `--match-head-commit` so a Dependabot force-push after CI can't sneak
+an untested tip into main. An earlier revision of this section claimed the first
+guard was inert here - that
+`github.event.workflow_run.pull_requests[0].base.sha` is always empty, so the
+comparison was a comment rather than a check. **That was wrong, and the error
+was a sampling artifact.** The array is populated while a PR is open and cleared
+once it closes; the sample behind the claim was drawn entirely from
+merged-and-closed PRs, so the confound was total and invisible.
 
-The replacement asks the API a slightly stronger question:
-`compare/main...$HEAD_SHA` and refuse unless `behind_by` is `0`. If the PR head
+The correction is measured, not reasoned. A temporary repository webhook
+subscribed to `workflow_run` captured a real `workflow_run.completed` delivery
+for an open PR - the same object `github.event.workflow_run` exposes - and its
+`pull_requests` array holds one entry whose `base.sha` is main's tip exactly.
+An auto-merge run is by definition the open-PR case, so the foundation's guard
+fires and does what it says. The webhook was deleted afterwards.
+
+What survives is the check itself, on weaker grounds than first claimed:
+`compare/main...$HEAD_SHA`, refuse unless `behind_by` is `0`. If the PR head
 already contains everything on main, the squash lands exactly the tree CI
-validated. If it doesn't, main has commits the tested merge never saw, so skip
-and let Dependabot rebase - the same skip-and-retry the original intended. The
-step runs under `set -euo pipefail`, so a failed compare call fails the run
-loudly rather than merging on a guess; the PR just stays open until CI runs
-again.
+validated; if it doesn't, main has commits the tested merge never saw, so skip
+and let Dependabot rebase - the same skip-and-retry the original intended. It is
+one API call, needs no payload plumbing, and reads the same without knowing the
+payload's shape. But it is **equivalent to the foundation's check, not a repair
+of it**, and reverting to the `base.sha` comparison would lose nothing. The step
+runs under `set -euo pipefail`, so a failed compare call fails the run loudly
+rather than merging on a guess; the PR just stays open until CI runs again.
 
 The job also takes a `concurrency` group, which the foundation's file does not
 need. Both guards are check-then-act, and the window is wide enough to drive a

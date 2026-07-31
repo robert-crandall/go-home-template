@@ -78,16 +78,19 @@ jobs:
           # publishes an image and deploys it.
           #
           # The foundation reads the tested base from
-          # github.event.workflow_run.pull_requests[0].base.sha. That does not
-          # work here: measured on this repo, all 8 of the most recent
-          # `pull_request` CI runs carry an EMPTY `pull_requests` array, so the
-          # base sha is always the empty string and the foundation's guard never
-          # fires. Copying it verbatim would have shipped a comment, not a check.
+          # github.event.workflow_run.pull_requests[0].base.sha, and that works:
+          # on a real workflow_run.completed payload captured from this repo the
+          # array holds one entry whose base.sha is main's tip exactly. The
+          # array is populated while the PR is open and cleared once it closes,
+          # and an auto-merge run is by definition the open case.
           #
-          # Ask a question the API will actually answer, and a slightly stronger
-          # one: does this PR head already contain everything on main? If it
-          # does, the squash lands exactly the tree CI validated. If it doesn't,
-          # main has commits the tested merge never saw.
+          # This asks the same question a different way: does the PR head
+          # already contain everything on main? If it does, the squash lands
+          # exactly the tree CI validated. If it doesn't, main has commits the
+          # tested merge never saw. One API call, no payload plumbing, and it
+          # reads the same whether or not you know the payload's shape. It is an
+          # equivalent check, not a repair of a broken one - reverting to the
+          # foundation's base.sha comparison would lose nothing.
           behind=$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$HEAD_SHA" --jq .behind_by)
           if [ "$behind" != "0" ]; then
             echo "PR head is $behind commit(s) behind main; the merge CI tested is stale. Skipping - Dependabot rebases and CI runs again."
@@ -110,8 +113,8 @@ jobs:
       # workflow_dispatch is one of the two documented exceptions to that rule,
       # which is why publish.yml carries the trigger. main's tip is the commit
       # that just merged, and trusting it is the same trust the merge above
-      # already extended: CI passed on that head, and the base-SHA check proved
-      # main had not moved underneath it.
+      # already extended: CI passed on that head, and the staleness check above
+      # proved main had not moved underneath it.
       #
       # Worst case if that GITHUB_TOKEN behaviour ever changes: a duplicate
       # publish of an identical digest. Wasteful, not wrong.
