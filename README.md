@@ -129,6 +129,16 @@ install it unprompted, because that heuristic does still want a service worker.
 See D6 in [`docs/tech-stack.md`](docs/tech-stack.md) for why the service worker
 is the piece left out.
 
+What the app does do is notice a deploy and reload itself, so an installed PWA
+doesn't sit on a stale build and never asks you to refresh.
+`version.pollInterval` in `web/svelte.config.js` re-checks `_app/version.json`
+once a minute, and an effect in `web/src/routes/+layout.svelte` reloads when the
+answer stops matching the running bundle - so a client that's awake picks up a
+deploy within about a minute, and one that was asleep picks it up when it wakes.
+The reload is unconditional - fine here, where the login form is the only input
+on either page, and the first thing to reconsider if you add a screen with
+unsaved state.
+
 ## Testing
 
 ```sh
