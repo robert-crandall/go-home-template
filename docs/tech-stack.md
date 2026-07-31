@@ -270,6 +270,14 @@ noticing - a URL that no longer exists comes back as the SPA fallback, and it
 comes back `no-cache`, so a dead chunk can never be poisoned into a cache
 carrying the one-year header.
 
+Every header in that table comes from a version-pinned dependency rather than
+from code in this repo, so a bump can change any of it. `TestSPACacheHeaders`
+pins the two rows a deploy depends on, and D6 says why those two. The
+`index.html` fallback must carry `no-cache` or `no-store`. Everything under
+`_app/immutable/` must carry `immutable` with a long `max-age`, must *not* carry
+`no-cache` or `no-store`, and must have a content-hashed filename. The rest of
+the table is a one-off measurement, true when written and not enforced.
+
 `no-cache` is the right directive here and `must-revalidate` would be redundant:
 it already means "store, but revalidate before use". `serveIndex` passes a zero
 modtime to `http.ServeContent`, so `index.html` has no `Last-Modified` and a
@@ -283,10 +291,10 @@ cacheable-extension list also covers stable-name files this app serves, though,
 the icons and the SVGs among them, so freshness for everything else rests on
 Cloudflare honouring the origin's `no-cache`. It does: Origin Cache Control is on
 by default on the free plan, and it stays true even with a Cache Everything rule.
-HTML, JSON, and `.webmanifest` aren't on the extension list at all, so `/`,
-`/login`, and `_app/version.json` are not edge-cached by default in the first
-place. What breaks this is a Cache Rule or Browser Cache TTL that *overrides*
-origin headers for those stable paths. No code in this repo can defend against
+HTML isn't on the extension list at all, so `/` and `/login` - the paths a deploy
+has to reach - are not edge-cached by default in the first place. What breaks
+this is a Cache Rule or Browser Cache TTL that *overrides* origin headers for
+those stable paths. No code in this repo can defend against
 that; the requirement is simply "let the origin decide for the stable paths".
 
 **The build-order consequence, which is the sharpest edge in this whole
@@ -481,64 +489,74 @@ It does **not** ship a service worker: SvelteKit auto-registers
 `src/service-worker.ts` in production builds, so a half-considered one is an
 asset-caching bug waiting to happen in every app that forgets it's there. See
 "Deliberately not here" for the web push consequence. What that costs is offline
-support, asset caching, and the *automatic* install prompt. Installing still
+support, a service-worker-managed asset cache, and the *automatic* install prompt
+(ordinary HTTP caching of the hashed assets is unaffected - see D4). Installing still
 works: Chrome dropped the fetch-handler requirement for installing from the
 menu (v108 mobile, v112 desktop), and `Page.getAppManifest` reports no errors
 for what ships here. What still requires a `fetch()` handler is the heuristic
 that offers the prompt unasked - so the app is installable, it just never asks.
 See [Chrome's post on the criteria change][install-criteria].
 
-**An installed PWA reloads itself on a deploy, and never asks.** This is the one
-piece of PWA behaviour the template does spend code on, because without it an
-installed app is a *worse* client than a browser tab: a tab gets closed and
-reopened, while a home-screen PWA is resumed from the app switcher for weeks and
-never re-navigates. The headers above only decide what a fresh load sees; they
-say nothing about a session that is already running.
+**How a deploy reaches an installed app, and why that is zero lines of code.**
+A *cold* launch - a real top-level navigation, which is what you get after the
+app has been force-quit or evicted - fetches `index.html`, which is `no-cache`,
+so the client cannot reuse yesterday's copy without asking. There is no validator
+to make that cheap, either: `serveIndex` passes a zero modtime to
+`http.ServeContent`, which does not generate an ETag, so the revalidation is a
+full 200 rather than a 304. Fresh HTML points at the new build's scripts, whose
+filenames contain a content hash, so they are fetched by virtue of being
+different URLs - the year-long `immutable` on the old ones is irrelevant because
+nothing asks for them any more.
 
-Two halves, useless apart:
+"Cold" is doing real work in that sentence and it is worth being pedantic about,
+because on iOS "opening the app" is usually not a navigation at all. Tapping the
+home-screen icon for a web app the system still has resident restores the live
+document, and no HTTP request happens.
 
-- `version.pollInterval: 60_000` in `web/svelte.config.js` makes SvelteKit
-  re-fetch `_app/version.json` on a timer and flip `updated.current` when it
-  stops matching the version baked into the running bundle. Left at its default
-  of `0`, Vite drops the timer from the bundle entirely - the compiled
-  `create_updated_store` ends up with a `clearTimeout(undefined)` and no
-  `setTimeout` at all - and the only thing that ever re-checks is SvelteKit's own
-  recovery path for a client-side navigation that failed to import a chunk.
-- An effect in `web/src/routes/+layout.svelte` reloads on that. Polling alone
-  changes nothing a user can see.
+`TestSPACacheHeaders` in `internal/app/cache_test.go` is what makes that safe to
+state. The whole argument rests on one header set inside go-home-server's
+`setSPACacheControl`, and this repo tracks that as a version-pinned dependency; a
+bump that gave `index.html` a positive `max-age` would silently start serving a
+stale build on launch, and nothing else here would notice. The test asserts the
+contract rather than the exact string - `no-cache` or `no-store`, in any order
+and any case - and walks the real embedded build, checking that the hashed
+filenames really are hashed. That pairing matters: `immutable` on a stable name
+would pin a stale build for a year, so the year-long header is only safe because
+a new build changes the URLs.
 
-A second effect calls `updated.check()` on `visibilitychange`. That one is
-latency and not correctness: the poll already lands every case within an interval
-once the page's JavaScript is running again, but a PWA resumed from the app
-switcher would show the old UI for up to a minute and *then* reload under you,
-which is worse than reloading at the moment you came back. There is deliberately
-no `pageshow`/`persisted` or `window.focus` listener - those cover real lifecycle
-paths this one misses, but a frozen page's timers are paused rather than deleted,
-so the poll recovers them on its own.
+**What that deliberately does not cover.** A client that is already running never
+re-checks. A desktop tab left open for a day, and an installed iOS PWA restored
+rather than relaunched, both keep running the old build until something forces a
+real document load - a reload, an address-bar navigation, or being killed and
+reopened. Following an in-app link does not count: that is a client-side
+navigation and never re-fetches `index.html`. On iOS that usually resolves itself, since
+the system evicts backgrounded web apps under memory pressure and the next resume
+is a real launch, but "usually" is the honest word and force-quitting is the
+reliable one.
 
-The reload is unconditional, which is a judgement about *this* app: the login
-form is the only input on either page, so there is no unsaved state to protect.
-An app that grows a real form should gate the effect on the form being clean.
-It should not put a "new version available, tap to refresh" banner there - that
-prompt is the thing this exists to avoid.
+This was implemented and then removed, so the shape of the alternative is known
+rather than guessed. `version.pollInterval` in `web/svelte.config.js` makes
+SvelteKit re-fetch `_app/version.json` on a timer and flip `updated.current`;
+an effect in the root layout reloads on that. Two things worth writing down for
+whoever reconsiders:
 
-`web/tests/update.spec.ts` proves it against the real binary, faking a deploy by
-answering `_app/version.json` with a different version. Two things make it more
-than a vibe. The poll is advanced with Playwright's clock rather than waited out,
-so it runs the app's own `setTimeout` instead of standing in for it, and each
-test asserts that zero version checks had happened before the trigger - otherwise
-a check fired during boot would pass whether or not `pollInterval` is set. Each
-half was also confirmed by breaking it: `pollInterval: 0` fails the two poll
-tests and leaves the visibility one passing, removing the reload effect fails
-both reload tests, and removing the visibility listener fails only its own.
+- Left at its default of `0`, Vite drops the timer from the bundle entirely - the
+  compiled `create_updated_store` ends up with a `clearTimeout(undefined)` and no
+  `setTimeout` at all. The only thing that re-checks by default is SvelteKit's
+  recovery path for a client-side navigation that failed to import a chunk, which
+  a PWA that never navigates will never hit. So the store existing is not
+  evidence that anything is checking.
+- `visibilitychange` alone is not a substitute for the timer. A desktop window
+  that stays visible and focused never fires it.
 
-One honest gap. The visibility test dispatches the event rather than really
-backgrounding the page, because in headless Chromium there is no way to produce
-it: opening a second page and calling `bringToFront()` on it leaves the first
-page's `visibilityState` at `"visible"` and fires no `visibilitychange` at all
-(measured). So that test proves the listener is wired to the same reload the poll
-uses; it cannot prove iOS emits the event on resume. Nothing runnable in CI can -
-which is exactly why the poll, and not the listener, is the mechanism of record.
+The cost of adding it back is one config line plus a `location.reload()`, and it
+is genuinely small. It was dropped because the freshness it buys - minutes rather
+than "next time you open the app" - is not worth a background request per minute
+per client for a homelab app that one person opens a few times a day. An app
+where users sit on one tab all day should reach for it. An app with unsaved form
+state should gate the reload on the form being clean, and still should not put a
+"new version available, tap to refresh" banner there - that prompt is the reason
+this is not a service worker.
 
 [install-criteria]: https://developer.chrome.com/blog/update-install-criteria
 
@@ -1225,9 +1243,9 @@ homelab template gets wrong by omission more often than by design:
   no longer undocumented: v0.1.4 added `docs/web-push.md` upstream with the
   minimal subscribe flow and service worker. Left out here because a template
   that ships a service worker ships a caching strategy, and the wrong caching
-  strategy is worse than none. Note that auto-updating an installed PWA is *not*
-  a reason to add one - D6 does that with a version poll, and a service worker is
-  what turns it back into a "tap to refresh" prompt.
+  strategy is worse than none. Note that picking up a deploy is *not* a reason to
+  add one: a cold launch already lands on the new build (D6), and a service worker
+  is what would turn that into a "tap to refresh" prompt.
 - **A state management library.** Svelte 5 runes plus a couple of `.svelte.ts`
   modules cover a single-user app.
 - **A component library.** See D5.

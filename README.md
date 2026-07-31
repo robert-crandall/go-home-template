@@ -229,21 +229,23 @@ sensibly tinted title bar. Regenerate the PNGs from `icon.svg` if you change the
 artwork - the `rsvg-convert` command is in a comment at the top of that file.
 
 There's deliberately no service worker, so there's no offline support and no
-asset caching. The app is still installable from the browser menu - Chrome
+service-worker-managed asset cache (ordinary HTTP caching of the hashed assets
+still applies). The app is still installable from the browser menu - Chrome
 dropped the fetch-handler requirement for that - but nothing will offer to
 install it unprompted, because that heuristic does still want a service worker.
 See D6 in [`docs/tech-stack.md`](docs/tech-stack.md) for why the service worker
 is the piece left out.
 
-What the app does do is notice a deploy and reload itself, so an installed PWA
-doesn't sit on a stale build and never asks you to refresh.
-`version.pollInterval` in `web/svelte.config.js` re-checks `_app/version.json`
-once a minute, and an effect in `web/src/routes/+layout.svelte` reloads when the
-answer stops matching the running bundle - so a client that's awake picks up a
-deploy within about a minute, and one that was asleep picks it up when it wakes.
-The reload is unconditional - fine here, where the login form is the only input
-on either page, and the first thing to reconsider if you add a screen with
-unsaved state.
+Picking up a deploy needs no code. `index.html` is served `no-cache` and every
+script filename contains a content hash, so a cold launch fetches fresh HTML that
+points at the new build. `TestSPACacheHeaders` in `internal/app/cache_test.go`
+pins that, since it's the only thing holding the behaviour up.
+
+"Cold" is the load-bearing word. A client that's already running won't notice a
+deploy at all: a tab left open, or an installed PWA the system restores rather
+than relaunches, keeps the old build until something forces a real document load.
+Following an in-app link doesn't count - that's a client-side navigation. D6 in [`docs/tech-stack.md`](docs/tech-stack.md)
+covers what to add if that isn't good enough for your app, and why it isn't here.
 
 ## Testing
 
