@@ -76,11 +76,14 @@ MCP over stdio. Install it with:
 
 ```sh
 make install-mcp
-# installed /Users/you/bin/go-home-template-mcp
+# installed /Users/you/bin/my-app-mcp
 ```
 
-The target always writes `~/bin/go-home-template-mcp`. If that directory is not
-on `PATH`, use the absolute path or add it for the current shell:
+Here and below, `my-app` stands for `<app>`: the last element of the Go module
+path, with a `/vN` suffix dropped. The unrenamed template uses
+`go-home-template`. The target always writes `~/bin/<app>-mcp`. If that
+directory is not on `PATH`, use the absolute path or add it for the current
+shell:
 
 ```sh
 export PATH="$HOME/bin:$PATH"
@@ -93,12 +96,12 @@ First log in to the running app (use `/api/auth/register` instead for its first
 account), keeping the session cookie in a temporary jar:
 
 ```sh
-curl -sS -c /tmp/go-home-template.cookies \
+curl -sS -c /tmp/my-app.cookies \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"your-password"}' \
   http://localhost:8080/api/auth/login
 
-curl -sS -b /tmp/go-home-template.cookies \
+curl -sS -b /tmp/my-app.cookies \
   -H 'Content-Type: application/json' \
   -d '{"name":"mcp"}' \
   http://localhost:8080/api/tokens
@@ -109,27 +112,27 @@ MCP config, then remove the cookie jar:
 
 ```sh
 mkdir -p "$HOME/.config"
-cat > "$HOME/.config/go-home-template.json" <<'JSON'
+cat > "$HOME/.config/my-app.json" <<'JSON'
 {
   "appUrl": "http://localhost:8080",
   "token": "pat_..."
 }
 JSON
-chmod 600 "$HOME/.config/go-home-template.json"
-rm /tmp/go-home-template.cookies
+chmod 600 "$HOME/.config/my-app.json"
+rm /tmp/my-app.cookies
 ```
 
 `appUrl` is optional and defaults to `http://localhost:8080`. The real
 `MCP_APP_URL` and `MCP_APP_TOKEN` environment variables take precedence over
 this file; the file takes precedence over a local `.env`. The config path is
-`$XDG_CONFIG_HOME/go-home-template.json` when `XDG_CONFIG_HOME` is set, and
-`~/.config/go-home-template.json` otherwise.
+`$XDG_CONFIG_HOME/<app>.json` when `XDG_CONFIG_HOME` is set, and
+`~/.config/<app>.json` otherwise.
 
 With the app running and the token valid, the shell mode proves the harness is
 live:
 
 ```sh
-go-home-template-mcp list
+my-app-mcp list
 # (no tools registered)
 ```
 
