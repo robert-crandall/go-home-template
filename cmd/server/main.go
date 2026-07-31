@@ -94,6 +94,19 @@ func main() {
 		}
 	}
 
+	// Sign in with Google, also optional. The gate is "any of the three set"
+	// rather than "the client ID is set", so a half-configured app crashes at
+	// startup with RegisterGoogle's error instead of quietly booting
+	// password-only and leaving someone to wonder where the button went.
+	var googleCfg *auth.GoogleConfig
+	if cfg.GoogleClientID != "" || cfg.GoogleClientSecret != "" || cfg.GoogleRedirectURL != "" {
+		googleCfg = &auth.GoogleConfig{
+			ClientID:     cfg.GoogleClientID,
+			ClientSecret: cfg.GoogleClientSecret,
+			RedirectURL:  cfg.GoogleRedirectURL,
+		}
+	}
+
 	srv := server.New(server.Options{
 		Title:       app.Title,
 		Version:     app.Version,
@@ -108,11 +121,14 @@ func main() {
 	// about what RegisterRoutes mounts. Not a per-deployment manifest, though:
 	// cmd/openapi always passes a real files service, so with UPLOAD_DIR unset
 	// this binary serves a subset of the spec it ships.
-	app.RegisterRoutes(srv.API, app.Deps{
+	if err := app.RegisterRoutes(srv.API, app.Deps{
 		Auth:   authSvc,
 		Notify: notifySvc,
 		Files:  filesSvc,
-	})
+		Google: googleCfg,
+	}); err != nil {
+		log.Fatalf("routes: %v", err)
+	}
 
 	log.Printf("listening on %s (env=%s)", cfg.Addr, cfg.Env)
 	if err := srv.Run(ctx); err != nil {

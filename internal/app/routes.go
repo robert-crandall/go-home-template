@@ -34,6 +34,10 @@ type Deps struct {
 	// nil when UPLOAD_DIR is unset, and RegisterRoutes then mounts no file
 	// endpoints at all.
 	Files *files.Service
+	// Google is nil for a password-only app, which is the default. cmd/server
+	// fills it in when any GOOGLE_* variable is set, and RegisterRoutes then
+	// mounts /api/auth/google/{start,callback}.
+	Google *auth.GoogleConfig
 }
 
 // RegisterRoutes mounts every operation on the shared huma API.
@@ -41,7 +45,13 @@ type Deps struct {
 // It only describes and wires routes; it never queries. That is what lets
 // SpecJSON pass services built over a nil pool - and the spec test is the
 // enforcement, since a query on a nil pool panics.
-func RegisterRoutes(api huma.API, deps Deps) {
+//
+// It returns an error because RegisterGoogle validates its config, and that is
+// the whole point of the validation: a half-set GOOGLE_* trio should stop the
+// process at startup rather than boot password-only and leave someone hunting
+// for the button. It cannot catch a redirect URL that is complete but wrong -
+// only Google knows that, and you find out at the consent screen.
+func RegisterRoutes(api huma.API, deps Deps) error {
 	deps.Auth.Register(api)
 	deps.Auth.RegisterTokens(api) // /api/tokens + bearer auth for scripts/MCP
 
@@ -58,19 +68,39 @@ func RegisterRoutes(api huma.API, deps Deps) {
 		files.Register(api, deps.Files, currentUser)
 	}
 
+	// Google sign-in, same story: optional, and always in the committed spec
+	// because cmd/openapi always passes a config.
+	if deps.Google != nil {
+		if err := deps.Auth.RegisterGoogle(api, *deps.Google); err != nil {
+			return err
+		}
+	}
+
 	// Add your app's own routes here.
-	registerAppState(api, deps.Auth)
+	registerAppState(api, deps.Auth, deps.Google != nil)
+
+	return nil
 }
 
-// AppState is what the SPA needs to know before anyone has signed in. One field
-// today; it's a struct rather than a bare bool so adding the next one isn't a
-// breaking change to the contract.
+// AppState is what the SPA needs to know before anyone has signed in. Two
+// fields today; it's a struct rather than a bare bool so adding the next one
+// isn't a breaking change to the contract.
 type AppState struct {
 	// RegistrationOpen reports whether POST /api/auth/register would be
 	// accepted right now. Advisory: under the default gate the register
 	// handler re-checks inside its transaction, holding an advisory lock, so a
 	// caller can lose the race between asking and posting.
 	RegistrationOpen bool `json:"registrationOpen" doc:"Whether registration is currently accepted"`
+
+	// GoogleLoginEnabled reports whether /api/auth/google/start is mounted.
+	// Fixed for the life of the process - it's config, not state.
+	//
+	// The SPA can't work this out for itself. Unmounted, /start gets the JSON
+	// 404 the server gives every unknown /api path, so an unconditional button
+	// would drop someone on a page of problem+json; and mounted, /start doesn't
+	// answer questions, it begins an OAuth redirect, so it can't be probed
+	// either.
+	GoogleLoginEnabled bool `json:"googleLoginEnabled" doc:"Whether Sign in with Google is configured"`
 }
 
 // registerAppState mounts GET /api/app.
@@ -86,7 +116,7 @@ type AppState struct {
 //
 // Note it only *describes* the operation here; the query runs per request, so
 // spec generation against a nil pool is unaffected.
-func registerAppState(api huma.API, authSvc *auth.Service) {
+func registerAppState(api huma.API, authSvc *auth.Service, googleEnabled bool) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-app-state",
 		Summary:     "App state",
@@ -103,7 +133,10 @@ func registerAppState(api huma.API, authSvc *auth.Service) {
 			// unauthenticated caller should read.
 			return nil, huma.Error500InternalServerError("could not read app state")
 		}
-		return &appStateOutput{Body: AppState{RegistrationOpen: open}}, nil
+		return &appStateOutput{Body: AppState{
+			RegistrationOpen:   open,
+			GoogleLoginEnabled: googleEnabled,
+		}}, nil
 	})
 }
 

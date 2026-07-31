@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/danielgtaylor/huma/v2 v2.39.0
-	github.com/robert-crandall/go-home-server v0.1.6
+	github.com/robert-crandall/go-home-server v0.1.7
 )
 
 require (

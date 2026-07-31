@@ -52,5 +52,13 @@ export ALLOW_OPEN_REGISTRATION=false
 export VAPID_PUBLIC_KEY=
 export VAPID_PRIVATE_KEY=
 
+# Same trick, same reason: a developer with real Google credentials in .env
+# would otherwise get the "Sign in with Google" button rendered on the login
+# page, and a half-configured one would crash the server at startup - both of
+# which are the .env deciding what the suite sees.
+export GOOGLE_CLIENT_ID=
+export GOOGLE_CLIENT_SECRET=
+export GOOGLE_REDIRECT_URL=
+
 echo "==> starting $PWD/.bin/e2e-server on :$port"
 exec ./.bin/e2e-server

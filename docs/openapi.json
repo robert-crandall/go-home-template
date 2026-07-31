@@ -56,13 +56,18 @@
             "readOnly": true,
             "type": "string"
           },
+          "googleLoginEnabled": {
+            "description": "Whether Sign in with Google is configured",
+            "type": "boolean"
+          },
           "registrationOpen": {
             "description": "Whether registration is currently accepted",
             "type": "boolean"
           }
         },
         "required": [
-          "registrationOpen"
+          "registrationOpen",
+          "googleLoginEnabled"
         ],
         "type": "object"
       },
@@ -472,6 +477,123 @@
         },
         "security": [],
         "summary": "App state"
+      }
+    },
+    "/api/auth/google/callback": {
+      "get": {
+        "operationId": "google-login-callback",
+        "parameters": [
+          {
+            "explode": false,
+            "in": "query",
+            "name": "code",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "error",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "oauth_state",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "Found",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [],
+        "summary": "Complete Google sign-in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/google/start": {
+      "get": {
+        "operationId": "google-login-start",
+        "responses": {
+          "302": {
+            "description": "Found",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Set-Cookie": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "security": [],
+        "summary": "Begin Google sign-in",
+        "tags": [
+          "auth"
+        ]
       }
     },
     "/api/auth/login": {

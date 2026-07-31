@@ -14,25 +14,37 @@
   const mode = $derived(data.registrationOpen ? (chosen ?? 'register') : 'login');
   let email = $state('');
   let password = $state('');
-  let error = $state('');
   let busy = $state(false);
+
+  // One alert slot, two sources. The form's own error is local state; the OAuth
+  // failure the browser arrived with lives in `data`, so it stays derived rather
+  // than being copied into state - a copy would only ever hold the first value
+  // `load` produced.
+  //
+  // `oauthDismissed` is what lets doing something else clear it: once you've
+  // submitted the form or switched tabs, a complaint about a Google sign-in you
+  // already abandoned is noise, and two stacked alerts are worse than one.
+  let formError = $state('');
+  let oauthDismissed = $state(false);
+  const error = $derived(formError || (oauthDismissed ? '' : data.oauthError));
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
-    error = '';
+    formError = '';
+    oauthDismissed = true;
     busy = true;
     try {
       const path = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const { data, error: failure } = await api.POST(path, { body: { email, password } });
       if (failure || !data) {
         // Whatever the server said, verbatim. See $lib/api/errors.
-        error = apiErrorMessage(failure);
+        formError = apiErrorMessage(failure);
         return;
       }
       auth.signedIn(data);
       await goto('/');
     } catch {
-      error = 'Could not reach the server.';
+      formError = 'Could not reach the server.';
     } finally {
       busy = false;
     }
@@ -40,7 +52,8 @@
 
   function switchTo(next: 'login' | 'register') {
     chosen = next;
-    error = '';
+    formError = '';
+    oauthDismissed = true;
   }
 </script>
 
@@ -118,6 +131,32 @@
             {mode === 'login' ? 'Log in' : 'Create account'}
           </button>
         </form>
+
+        <!--
+          A plain link, because the foundation's flow is entirely server-side:
+          /api/auth/google/start 302s to Google's consent screen and the callback
+          sets the same session cookie a password login sets. No Google script
+          tag, no client SDK, nothing to initialise.
+
+          data-sveltekit-reload because /api/... is not a SvelteKit route and
+          this has to be a real navigation, not a client-side one.
+
+          Shown in both modes, and specifically NOT hidden while registration is
+          open. Google can only create an account under
+          ALLOW_OPEN_REGISTRATION=true - it never bootstraps the first one - but
+          `registrationOpen` is true for both that case and "no account exists
+          yet", and cannot tell them apart (same limitation as the tab pair
+          above). Gating on it would hide the button in the one deployment where
+          Google signup works, to spare the bootstrap case a message. So it
+          stays, and `registration_closed` says what to do instead - see
+          +page.ts.
+        -->
+        {#if data.googleLoginEnabled}
+          <div class="divider my-4 text-xs">or</div>
+          <a href="/api/auth/google/start" data-sveltekit-reload class="btn btn-outline w-full">
+            Sign in with Google
+          </a>
+        {/if}
       </div>
     </div>
   </div>

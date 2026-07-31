@@ -214,9 +214,10 @@ Registration is gated by `ALLOW_OPEN_REGISTRATION`. It defaults to `false`,
 which means "the first account only" - fine for a single-user app, which is what
 this template is shaped for. Set it to `true` if you want anyone to sign up.
 
-`/login` reads that state rather than guessing at it. `GET /api/app` returns
-`{ "registrationOpen": bool }` from `auth.Service.RegistrationOpen`, which runs
-the same predicate the register handler runs, and the page shows the Log in /
+`/login` reads that state rather than guessing at it. `GET /api/app` returns a
+`registrationOpen` boolean (alongside `googleLoginEnabled`) from
+`auth.Service.RegistrationOpen`, which runs the same predicate the register
+handler runs, and the page shows the Log in /
 Register pair only when the answer is yes - opening on Register, since that's
 the thing to do at that moment. By default that means the pair is gone once a
 non-deleted account exists, and `/login` is just a login form, instead of a
@@ -228,6 +229,41 @@ The state is advisory. Under the default gate the register handler re-checks
 inside its transaction, holding a database advisory lock, so a page that loaded
 while registration was open can still lose the race - and it renders the
 server's refusal rather than pretending that can't happen.
+
+### Sign in with Google
+
+Off unless you set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and
+`GOOGLE_REDIRECT_URL`. Create an OAuth client in the Google Cloud console and
+point the redirect URL at `https://your-app/api/auth/google/callback` in both
+places - they have to match byte for byte.
+
+The flow is entirely server-side, so the SPA side of it is a link, not a script
+tag: `/api/auth/google/start` redirects to Google's consent screen, and the
+callback sets the same session cookie a password login sets. Nothing downstream
+of the cookie can tell the two apart.
+
+One account, two doors: a Google sign-in matches an existing user by **verified
+email**, case-insensitively, so the row `POST /api/auth/register` created is the
+row Google finds. There is no linking step and no `google_sub` column, which is
+also the assumption to be aware of - it takes for granted that the address is a
+Gmail one or on a domain you control, so it can't be handed to someone else
+later.
+
+Who gets in follows `ALLOW_OPEN_REGISTRATION`, with one narrowing: **Google
+never creates the first account.** With registration closed (the default) a
+stranger's Google sign-in bounces to `/login?error=registration_closed`, and so
+does the very first one on an app with no accounts at all - that door stays
+password-only so a broken OAuth client can't lock the owner out. With
+`ALLOW_OPEN_REGISTRATION=true` a Google sign-in creates the account, and that
+account has no usable password until the app grows a set-password flow.
+
+`/login` shows the button only when the server says it's configured -
+`GET /api/app` returns `googleLoginEnabled` alongside `registrationOpen` -
+because an unmounted `/api/auth/google/start` answers with the same JSON 404 as
+any other unknown API path, which is not a thing to hand a browser. Failures
+come back as `?error=<code>` from a fixed vocabulary rather than as JSON, and
+the login page owns that wording; it's the one exception to "errors are the
+server's words", because a code isn't a sentence.
 
 ## Theming and install metadata
 
@@ -465,6 +501,7 @@ with no secrets configured works; it just doesn't tell anyone anything.
 | `UPLOAD_MAX_BYTES` | no | Per-upload size cap. |
 | `ALLOW_OPEN_REGISTRATION` | no | Default false: the first user registers, then registration closes. |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | no | Web push, off unless set. All three together or none: one key alone is a startup error, and so is a missing or malformed subject (it must be a `mailto:` or `https:` URL). |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URL` | no | Sign in with Google, off unless set. All three together or none - set one and the app won't start. See "Sign in with Google" above. |
 
 `APP_ENV=production` means **nobody can log in over plain HTTP** - a `Secure`
 cookie is dropped by the browser. Put TLS termination in front of it, or leave
@@ -602,7 +639,7 @@ Two things follow from that, and both bite eventually:
 Routes are registered in one place, `internal/app/routes.go`:
 
 ```go
-func RegisterRoutes(api huma.API, deps Deps) { ... }
+func RegisterRoutes(api huma.API, deps Deps) error { ... }
 ```
 
 `cmd/server` and `cmd/openapi` are both thin callers of it, which is what keeps

@@ -58,7 +58,7 @@ graph TD
 
 | Layer | Choice | Version at time of writing |
 |---|---|---|
-| Backend foundation | `go-home-server` | >= v0.1.6 |
+| Backend foundation | `go-home-server` | >= v0.1.7 |
 | Language | Go | 1.26 |
 | HTTP | chi + huma (from the foundation) | - |
 | Database | Postgres, one instance | >= 14; CI tests on 18 |
@@ -87,7 +87,7 @@ thumbnails, web push, graceful shutdown, `/healthz`) comes in as a dependency.
 every app picks it up with `go get -u`. Vendoring the source into the template
 would break that on day one.
 
-**Minimum version: v0.1.6.** See "Foundation version" at the end.
+**Minimum version: v0.1.7.** See "Foundation version" at the end.
 
 **Consequence:** the template must not reimplement anything the foundation
 offers. If a template app needs different auth behavior, the fix goes upstream.
@@ -139,9 +139,9 @@ huma generates the OpenAPI spec from the Go handler types. The template turns
 that into a build artifact:
 
 1. `internal/app/routes.go` exposes one function, `RegisterRoutes(api huma.API,
-   deps Deps)`, which mounts every operation (the foundation's and the app's).
-   It is the only place routes are registered. The name matches the foundation's
-   README so the two read as one instruction.
+   deps Deps) error`, which mounts every operation (the foundation's and the
+   app's). It is the only place routes are registered. The name matches the
+   foundation's README so the two read as one instruction.
 2. `cmd/server` calls it with live dependencies.
 3. `cmd/openapi` calls it with **spec-mode dependencies** and marshals
    `srv.API.OpenAPI()` to `docs/openapi.json`.
@@ -468,9 +468,9 @@ closed`. Turn open registration on (`cmd/server/main.go` wires it to
 `authSvc.OpenRegistration`) and 409 becomes reachable in the browser normally.
 
 **The Register control only exists while registration would be accepted (#38).**
-`GET /api/app` returns `{registrationOpen}` from
-`auth.Service.RegistrationOpen`, which runs the same predicate the register
-handler runs; `/login`'s `load` reads it and the page renders the Log in /
+`GET /api/app` returns `{registrationOpen, googleLoginEnabled}`;
+`registrationOpen` comes from `auth.Service.RegistrationOpen`, which runs the
+same predicate the register handler runs; `/login`'s `load` reads it and the page renders the Log in /
 Register pair only when the answer is yes, opening on Register. Under the
 default gate that window lasts until the first non-deleted account exists -
 usually the first thing whoever deployed it does, and the whole point is that
@@ -1288,6 +1288,25 @@ which means `/api/tokens` exists on a fresh app:
   and an uploads-off deployment serves a *subset* of its own published spec.
   That's deliberate - the committed spec is the template's contract, not a
   per-deployment manifest.
+- **Sign in with Google** - registered only when a `GOOGLE_*` variable is set,
+  same shape as uploads: `cmd/server` leaves `Deps.Google` nil otherwise and
+  `RegisterRoutes` skips `RegisterGoogle`. Two differences from the others are
+  worth knowing. First, the gate is *any* of the three variables rather than the
+  client ID alone, so a half-configured app crashes at startup with
+  `RegisterGoogle`'s error instead of silently booting password-only - the same
+  posture as VAPID's both-or-neither. Second, `RegisterGoogle` returns an error,
+  which is why `RegisterRoutes` returns one too; swallowing it would ship a
+  button that bounces off a Google error page for a misconfiguration the process
+  already knew about. What that check *can't* catch is a redirect URL that's
+  complete but doesn't match the one in the Google console - only Google knows
+  that, and you find out at the consent screen.
+  The SPA needs telling: `GET /api/app` gained `googleLoginEnabled`, because an
+  unmounted `/api/auth/google/start` returns the JSON 404 the server gives every
+  unknown `/api` path, and a mounted one can't be probed - it starts an OAuth
+  redirect rather than answering. Failure comes back as `/login?error=<code>`
+  from a closed vocabulary the foundation documents, so the login page owns that
+  copy; it is the deliberate exception to D6's "errors are the server's words",
+  since there is no server sentence to render.
 - **LLM** (`llm` package) - not wired. Add it when the app calls a model.
   `llm.New` fails at startup when no provider key is set, which is right for an
   app that uses it and wrong as a default for one that doesn't.
@@ -1310,6 +1329,7 @@ required ones filled in for local development.
 | `UPLOAD_DIR` | no | unset means the file routes aren't registered at all; set means it must already exist and be writable by UID 65532 |
 | `UPLOAD_MAX_BYTES` | no | defaults to 25 MiB |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | no | both keys or neither; one alone is a startup error |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REDIRECT_URL` | no | Sign in with Google; all three or none, and any one alone is a startup error. The redirect URL must byte-match the Google console entry |
 | `SESSION_SECRET` | no | read but unused by the foundation |
 
 ## Operations
@@ -1388,10 +1408,11 @@ Accepted here:
 
 ## Foundation version
 
-**This template requires `go-home-server` v0.1.6 or later.** Not a soft
+**This template requires `go-home-server` v0.1.7 or later.** Not a soft
 preference: `auth.Service.TokenHumaConfig` landed in v0.1.4 and `RegisterTokens`
-panics without it, the `apisec` package landed in v0.1.5, and
-`auth.Service.RegistrationOpen` landed in v0.1.6 - so the wiring in D3, D6 and
+panics without it, the `apisec` package landed in v0.1.5,
+`auth.Service.RegistrationOpen` landed in v0.1.6, and
+`auth.Service.RegisterGoogle` landed in v0.1.7 - so the wiring in D3, D6 and
 D11 won't compile or boot against anything earlier.
 
 That work came out of writing this document's first draft against v0.1.3, which
@@ -1408,6 +1429,13 @@ second repository. Two copies of one predicate that have to agree, with nothing
 failing a build when they drift. `RegistrationOpen` is the same query, exported
 ([#36]).
 
+v0.1.7 is the same pattern a third time. "Log in with Google or a password"
+could have been a Google Identity Services button and a client-side integration
+in this SPA; instead the whole OAuth flow is upstream, ending at the same session
+cookie password login already sets, and the app's share of it is a link plus one
+bool in `GET /api/app` ([#38]).
+
 [#33]: https://github.com/robert-crandall/go-home-server/issues/33
 [#34]: https://github.com/robert-crandall/go-home-server/pull/34
 [#36]: https://github.com/robert-crandall/go-home-server/issues/36
+[#38]: https://github.com/robert-crandall/go-home-server/pull/38

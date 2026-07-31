@@ -34,6 +34,15 @@ func SpecModeDeps(dir string) (Deps, error) {
 		Auth:   auth.NewService(nil, true),
 		Notify: notifySvc,
 		Files:  filesSvc,
+		// Placeholder credentials, never dialled: spec mode registers routes
+		// and stops. newGoogleAuth only insists that all three are non-empty
+		// (the success/failure paths default to "/" and "/login"), so this is
+		// enough to keep the Google operations in the committed spec.
+		Google: &auth.GoogleConfig{
+			ClientID:     "spec-mode-client-id",
+			ClientSecret: "spec-mode-client-secret",
+			RedirectURL:  "https://spec.invalid/api/auth/google/callback",
+		},
 	}, nil
 }
 
@@ -56,7 +65,9 @@ func SpecJSON(dir string) ([]byte, error) {
 		Version:    Version,
 		HumaConfig: deps.Auth.TokenHumaConfig,
 	})
-	RegisterRoutes(srv.API, deps)
+	if err := RegisterRoutes(srv.API, deps); err != nil {
+		return nil, fmt.Errorf("register routes: %w", err)
+	}
 
 	out, err := json.MarshalIndent(srv.API.OpenAPI(), "", "  ")
 	if err != nil {
