@@ -170,7 +170,11 @@ jobs:
   # runtime stage.
   #
   # Cache only, no output: a multi-platform result isn't --load-able into the
-  # runner's daemon, so there is nothing to hand downstream. Publishing is M5.
+  # runner's daemon, so there is nothing to hand downstream. Publishing is
+  # .github/workflows/publish.yml, which fires when this workflow completes -
+  # and reuses the gha cache this job just populated, so the publish build is
+  # warm. That's the second reason this job stays here even though it produces
+  # nothing.
   docker-build:
     runs-on: ubuntu-latest
     steps:

@@ -548,9 +548,9 @@ and is not the same thing as configuring it badly.
 
 CI on every PR and push to main. The job graph matters because of the embed
 described in D4, and because publishing keys off CI's overall conclusion, so a
-job that doesn't gate the graph doesn't gate a deploy either. As of M4 all five
-jobs exist and the "what it runs" column describes them as they are; the publish,
-notification and Dependabot workflows below are not written yet:
+job that doesn't gate the graph doesn't gate a deploy either. As of M5 all five
+jobs exist, and the publish, notification and Dependabot workflows below are
+written:
 
 | Job | Needs | What it runs |
 |---|---|---|
@@ -657,44 +657,339 @@ that triggered it: it was a push (`github.event.workflow_run.event`, not
 `github.event_name` - this workflow's own event is always `workflow_run`), CI
 passed, and the commit CI tested is *still* the branch tip. The guard
 always runs and emits the answer as an output; the build job carries
-`if: needs.guard.outputs.should_publish == 'true'`, so it's the *build* job
+`if: needs.guard.outputs.publish == 'true'`, so it's the *build* job
 that gets skipped on a stale commit. Skipped rather than exiting zero, because
-the notification below keys off that job's conclusion, and a job that
-"succeeded" without pushing an image would tell the homelab to redeploy
-something it already has.
+a job that "succeeded" without pushing an image is a job whose conclusion lies.
 
-`publish` tags the image `:main`, `:<sha>`, and `:v1.2.3`, and builds from the
-sha CI validated rather than whatever the branch tip is by then. That means
-checking out `github.event.workflow_run.head_sha` - in a `workflow_run`
-workflow `github.sha` is the default branch, not the commit that triggered you,
-which is a quiet way to publish the wrong code. Deployment is Watchtower on the
-host, watching the mutable tag; I'm not putting a deploy key in GitHub Actions
-for a homelab box.
+`publish` builds from the sha CI validated rather than whatever the branch tip
+is by then. That means checking out `github.event.workflow_run.head_sha` - in a
+`workflow_run` workflow `github.sha` is the default branch, not the commit that
+triggered you, which is a quiet way to publish the wrong code. Deployment is
+Watchtower on the host, watching the mutable tag; I'm not putting a deploy key
+in GitHub Actions for a homelab box.
 
-**Notifications** are a third workflow, fanning out from the other two, and both
-halves are opt-in - unset the secret and they no-op, so a fork isn't broken by
+Tags. The `main` path publishes `:main` and `:sha-<full 40-character commit
+sha>`; a `v*` tag push publishes `:v1.2.3` and nothing else. The immutable tag
+carries the whole sha rather than an abbreviation, because a short sha can
+collide and a colliding "immutable" tag is worse than none - it's one that lies.
+Nothing but a machine reads it, so the length costs nothing.
+
+#### What M5 changed about the three paragraphs above
+
+The design in D9 survived contact in outline and needed three amendments in
+detail. Each is a deliberate deviation from what this ADR previously said, and
+each is here rather than buried in a commit message.
+
+**1. The immutable tag is pushed first, and `:main` moves in a second job.**
+The guard closes the race it was designed for, but not on its own: it checks
+freshness, then the build runs for minutes, then the tag moves. That is
+check-then-act, and the losing outcome isn't self-healing - `:main` would sit on
+older code until somebody happened to merge again. (For scale, the cold-cache
+run `30601209605` took 2m54s end to end, with `docker-build` accounting for
+2m50s of it. The duration isn't what decides this; a check-then-act race is a
+correctness problem at any width.)
+
+So `build` pushes only `:sha-<sha>`, which is per-commit and cannot collide, and
+a `promote` job re-reads the branch tip afterwards and only then moves `:main`
+with `docker buildx imagetools create` - a registry-side manifest copy of an
+image that already exists, so no rebuild and no local daemon.
+
+That last part is measured, not assumed. A probe pushed a two-platform image,
+then ran `imagetools create` on a *separate* runner with no
+`docker/setup-buildx-action` and no builder set up: it logged `copying sha256:…`
+then `pushing`, finished in 1.7s, and produced an index carrying both
+`linux/amd64` and `linux/arm64`. The source and promoted manifests hash
+identically, so it really is the same manifest rather than a rebuild - which is
+also why `promote` doesn't need a buildx builder, only the CLI plugin the runner
+image already ships. `promote` carries
+a job-level `concurrency` group of its own (`cancel-in-progress: false`). That
+is not the workflow-wide concurrency this ADR rejects above; it is narrower, and
+it's worth being precise about what it buys:
+
+- **It guarantees** that promote jobs never overlap, and that `:main` is never
+  rolled backwards - a promote running after a newer one has already moved the
+  tag re-reads the newer tip and declines. That is the failure issue #8 names,
+  gone.
+- **It does not guarantee** that the re-read and the tag move are atomic. A
+  newer commit can land in between, in which case `:main` goes to the older
+  image and then the newer commit's own promote moves it forward. Transient and
+  self-correcting - a lag, not a rollback.
+- **Nor does it guarantee** that `:main` always ends up on the newest commit
+  that successfully published. GitHub keeps one pending entry per concurrency
+  group, so with A running, B pending and C queued, B gets cancelled - and if C
+  then declines or fails, `:main` stays at A even though B's immutable tag
+  exists. `:main` is always *a* commit that published successfully, but it is
+  not a maximum. Correctness survives because a cancelled job cannot write.
+
+**Two booleans gate three jobs, so walk the combinations rather than trusting the
+`if:` expressions to read correctly.** `guard` emits `publish` and `promote_main`;
+`build` is gated on the first, `promote` on the second *and* on
+`needs: [guard, build]`:
+
+| `publish` | `promote_main` | `build` | `promote` | When | Right? |
+|---|---|---|---|---|---|
+| true | true | runs | runs | fresh main merge, or a dispatch on main | job runs; it moves `:main` only if its re-read of the tip still equals the ref it built, and no-ops otherwise |
+| true | true | **fails** | **skipped** | build broke | yes - never move `:main` onto an image no job pushed |
+| true | false | runs | **skipped** | `v*` tag push | yes - `:v1.2.3` is already immutable, `:main` didn't move |
+| false | false | **skipped** | **skipped** | stale main, red CI, non-push CI, cancelled CI, dispatch off main | yes - the green-wrapper-with-nothing-published case |
+| false | true | skipped | *unreachable* | - | the dangerous one |
+
+If `guard` itself fails the matrix doesn't apply at all: there are no outputs to
+trust, both downstream jobs skip through `needs`, and the workflow goes red. That
+is a different state from the `false/false` row, which is a *successful* decision
+to publish nothing - worth keeping separate, because one should page someone and
+the other shouldn't.
+
+The last row is the one worth naming. Today it cannot happen: both paths that set
+`promote_main=true` (`workflow_run` and `workflow_dispatch`) set `publish=true` in
+the same breath - the `v*` tag path is the only one that separates them, and it
+sets `promote_main=false`. Even if one didn't, `promote`'s `needs: build` carries
+no status function, so a skipped `build` skips `promote` anyway. But that second
+protection is a property of the YAML, not of the plan - it evaporates the moment
+someone writes `if: always() && ...`, which is a natural thing to reach for when
+trying to make a skip render differently. So the combination is refused at the
+source: every
+publish-plan **test case** is additionally checked against four invariants, so a
+newly tested arm has to satisfy the workflow's contract and not just its own
+expected outputs. (This binds cases, not arms - an arm added with no test case is
+covered by nothing, same as any other untested code.) The invariants are that
+`promote_main` implies `publish`, that `publish` implies a non-empty `ref`, that
+`publish` implies at least one of `version`/`sha_tag`, and that `promote_main`
+implies a `sha_tag` for `imagetools` to copy from. Each was confirmed to fail when
+its specific violation is introduced into the script, rather than being assumed to
+work because the suite is green.
+
+The `ref` invariant is the least obvious and the worst if it breaks. `build`
+checks out `needs.guard.outputs.ref`; a misspelled output name in that expression
+yields an **empty string rather than an error**, and `actions/checkout` treats an
+empty `ref` as "whatever triggered this run" - which under `workflow_run` is the
+default branch tip, not the commit CI validated. The failure mode is a silent
+publish of the wrong commit, and it is invisible on any merge where those two
+happen to be the same commit.
+
+"Visibly skipped" therefore renders three ways. The common case (the newer
+commit merged before the older run's guard) is a genuinely skipped `build` job.
+The rarer promote-time cases are a skipped *step* inside `promote`, or a
+`cancelled` job. There is no third job to make the latter two cosmetically a
+skip; that would be machinery for appearances.
+
+**2. The Watchtower ping moved into the publish job.** This ADR used to put it
+in the notification workflow, reading the publish *job's* conclusion via
+`gh api .../jobs`, because a guarded publish leaves a green wrapper behind. That
+hazard is real and measured - `robert-crandall-org/peptide-tracker` run
+`29518897699` shows `Guard=success`, `Build and Push=skipped`, wrapper
+`success`; 60 of 60 of its publish runs concluded `success` and 6 published
+nothing.
+
+But the introspection is redundant *here*, because the Slack rule below is
+failure-only and never announces a publish, so the ping was the only consumer -
+and the job that pushed the image already knows firsthand. Asking from inside
+`promote` deletes a cross-workflow API call, an `actions: read` grant, a
+coupling to the publish job's *display name* (renaming it would have silently
+disabled deployment forever), and an "API call failed, state unknown" branch.
+
+The secret-scoping rationale that justified the split doesn't survive either:
+the publish job already holds a `packages: write` token, so anyone who can
+exfiltrate from it can push a malicious image that Watchtower deploys on its
+next poll anyway. The webhook is still scoped to the single step that uses it,
+and dropping the third-party Slack action for a `curl` removes the other half.
+
+**3. `workflow_dispatch`, for Dependabot.** See the Dependabot section below.
+
+Two things the publish path deliberately does *not* do. There is **no `sleep`
+before the ping**: `docker/build-push-action` returns after the registry
+accepted the manifest, and no GHCR propagation lag has been measured here.
+Watchtower's own poll is the backstop if one ever appears; a blind minute for an
+unobserved race is exactly the machinery that gets added and never removed.
+And there is **no retry around the `curl`** - the step is
+`continue-on-error: true`, because an unreachable homelab must not turn a good
+publish red.
+
+The version-tag path assumes **you tag a commit that is already green on
+`main`**. CI doesn't run on tags, and nothing checks that the tagged commit is
+reachable from `main`. Stated rather than defended against: tagging an off-main
+commit is a deliberate act, and the blast radius is a `:v1.2.3` that no
+Watchtower is watching.
+
+`workflow_dispatch` is restricted to `refs/heads/main` inside
+`scripts/ci/publish-plan.sh`, because anyone with write access can dispatch any
+workflow against any ref from the Actions UI, and a dispatch off a feature
+branch would otherwise move `:main` to unreviewed code. What it does *not* check
+is whether `main` is currently green - it publishes the tip regardless. For the
+Dependabot caller that's fine (CI passed on that head and the staleness guard
+proved `main` hadn't moved); for a human clicking "Run workflow" it's a manual
+override that skips CI. Gating on the actor would break that escape hatch, which
+is worth having when a publish needs re-running.
+
+`${{ github.repository }}` preserves the case the owner typed and GHCR rejects
+uppercase references, so the script lowercases the image path. For a template
+that's not hypothetical - a fork into `Bob/MyApp` would fail on its first merge
+with `invalid reference format`, in a workflow its owner has never read.
+
+#### The decisions live in shell, not in YAML
+
+`workflow_run` reads its trigger configuration from the copy of the workflow on
+the **default branch**, so a publish or notification workflow added in a pull
+request does not fire from that pull request. Every earlier milestone here
+proved itself with a `make` target before merge; this one structurally cannot,
+end to end.
+
+So both workflows push their entire decision into
+`scripts/ci/publish-plan.sh` and `scripts/ci/notify-decision.sh` - pure
+functions of their environment, emitting single-line `key=value` pairs that the
+workflow appends to `$GITHUB_OUTPUT`. (Single-line matters: `$GITHUB_OUTPUT`
+needs heredoc syntax for multiline values, so a newline-separated tag list would
+silently corrupt the file. The scripts emit scalars and the workflow composes
+the tag string.) The one I/O call - reading the branch tip - stays in the
+workflow and is passed in.
+
+`internal/cicd` then execs those scripts over a table and asserts the outputs,
+riding the existing `go test ./...` so `make test` and CI's `go` job both cover
+it with no new wiring. That's what makes the freshness guard, the
+`workflow_dispatch` refusal, the lowercasing and all 22 notification cases
+demonstrable before merge instead of after. The test reads each script with
+`os.ReadFile` before exec'ing it, which looks pointless and isn't: `go test`
+decides cache validity from files the test binary itself opened, and a script
+run by a child process is invisible to that - without the read, editing a script
+and re-running reports a cached PASS from before the edit.
+
+One trap worth naming, because it defeats the whole arrangement: the default
+shell for a `run:` block is `bash -e`, **not** `bash -eo pipefail`. Without an
+explicit `set -eo pipefail`, `script | tee -a "$GITHUB_OUTPUT"` reports `tee`'s
+exit status, so a decision script that dies half way through leaves the step
+green with partial outputs - which reads exactly like a deliberate skip. Same
+class of bug as `echo "sha=$(gh api ...)"`, where `set -e` does not see the
+failure inside the substitution and an empty branch tip silently means "publish
+nothing". Both are assigned-then-asserted instead.
+
+**Notifications** are a second workflow fanning out from the other two, and both
+webhooks are opt-in - unset the secret and they no-op, so a fork isn't broken by
 secrets it doesn't have:
 
-- Slack, when CI fails on a **push** to main. Not on pull requests, not on
-  cancellations, and not on success. A notification that fires when things are
-  fine is a notification you learn to ignore.
-- A Watchtower webhook, after an image was really published. It reads the
-  *job* conclusion via `gh api .../jobs`, not the workflow's, because a guarded
-  publish leaves a green wrapper behind - and then waits a beat for the registry
-  to settle before pinging, since Watchtower pulls immediately.
+- Slack, when CI fails on a **push** to main, or when Publish fails. Not on
+  pull requests, not on cancellations, and not on success. A notification that
+  fires when things are fine is a notification you learn to ignore.
+- A Watchtower webhook, from `promote`, after `:main` really moved.
 
-The two jobs get their secrets scoped separately, so the third-party Slack
-action never sees the webhook that can trigger a deploy.
+**The first merge of this milestone is the first live test of the Watchtower
+unset-secret guard and of Notify's stay-silent-on-green decision - but not of
+Slack's unset-secret guard**, because `workflow_run` resolves its trigger
+configuration from the file on the default branch and nothing here can fire from
+the PR that introduces it. The repo had zero secrets and zero variables at merge
+time (checked: repo secrets 0, repo variables 0, and the single `copilot`
+environment empty and referenced by no job), so that first run exercises the
+unset-secret path for real rather than in review.
+
+The asymmetry is worth separating, because it decides what the first merge
+actually buys:
+
+- The **Watchtower** guard runs when `promote` actually moves `:main`: it sets
+  `promoted=true`, the ping step executes, and the
+  `[ -z "$WATCHTOWER_WEBHOOK_URL" ]` branch logs that there was nothing to
+  notify. Proven live - but anchored to that log line, not to a green run. A
+  green Publish also covers "the guard declined" and "`promote` no-opped because
+  main moved", and in neither of those does the ping step execute at all.
+- The **Slack** guard does not. It sits *inside* the `Post to Slack` step, which
+  is gated on `notify == 'true'`, and a green merge decides `notify=false` - so
+  the step is skipped and the guard never executes. It stays reviewable-only
+  until `main` genuinely breaks. The decision that reaches it is table-tested;
+  the two-line guard behind it is not.
+
+The corollary is that the evidence is spendable: set `WATCHTOWER_WEBHOOK_URL`
+before that first promotion and the live half is never observed.
+(`WATCHTOWER_TOKEN` is exempt - it is never read unless the URL is set.) The
+README says so next to the secrets so nobody trades it away while following setup
+instructions.
+
+The subtlety the notification test table exists to catch: a Publish run's
+`workflow_run.event` is `workflow_run` when CI triggered it and
+`workflow_dispatch` when Dependabot's auto-merge dispatched it - it is never
+`push` except on the version-tag path. A naive "only notify on push" gate would
+therefore silence publish failures entirely, including the case that most needs
+a human: a dependency update that merged itself and then failed to publish, with
+nobody watching because nobody opened the PR. So Publish is exempt from the push
+requirement and everything else requires it - which is also what stops a fork's
+pull request, opened from a branch literally named `main`, from paging anyone.
+
+`Notify` has no `branches:` filter, because a version-tag Publish run's
+`head_branch` is the tag rather than `main`. The cost is a Notify run per
+pull-request CI completion that decides "no" in a couple of seconds, and the
+mild over-reach that a failed *version* publish notifies too, which is slightly
+beyond "a broken `main`".
 
 Dependabot covers four ecosystems weekly: `gomod` (`/`), `bun` (`/web`),
 `github-actions` (`/`), and `docker` (`/`). Minor and patch updates are grouped
 into one PR per ecosystem; majors come as standalone PRs so they're at least
 legible.
 
-The foundation's `dependabot-auto-merge.yml` is copied verbatim, including the
-two guards that make it **race-safe**: it skips if main advanced after CI ran,
-and it merges with `--match-head-commit` so a Dependabot force-push after CI
-can't sneak an untested tip into main.
+The foundation's `dependabot-auto-merge.yml` is copied with **two** changes.
+
+The first is a restatement, and it comes with a correction to this ADR. That
+file's two guards make it **race-safe**: skip if main advanced after CI ran, and
+merge with `--match-head-commit` so a Dependabot force-push after CI can't sneak
+an untested tip into main. An earlier revision of this section claimed the first
+guard was inert here - that
+`github.event.workflow_run.pull_requests[0].base.sha` is always empty, so the
+comparison was a comment rather than a check. **That was wrong, and the error
+was a sampling artifact.** The array is populated while a PR is open and cleared
+once it closes; the sample behind the claim was drawn entirely from
+merged-and-closed PRs, so the confound was total and invisible.
+
+The correction is measured, not reasoned. A temporary repository webhook
+subscribed to `workflow_run` captured a real `workflow_run.completed` delivery
+for an open PR - the same object `github.event.workflow_run` exposes - and its
+`pull_requests` array holds one entry whose `base.sha` is main's tip exactly.
+An auto-merge run is by definition the open-PR case, so the foundation's guard
+fires and does what it says. The webhook was deleted afterwards.
+
+What survives is the check itself, on weaker grounds than first claimed:
+`compare/main...$HEAD_SHA`, refuse unless `behind_by` is `0`. If the PR head
+already contains everything on main, the squash lands exactly the tree CI
+validated; if it doesn't, main has commits the tested merge never saw, so skip
+and let Dependabot rebase - the same skip-and-retry the original intended. It is
+one API call, needs no payload plumbing, and reads the same without knowing the
+payload's shape. But it is **equivalent to the foundation's check, not a repair
+of it**, and reverting to the `base.sha` comparison would lose nothing. The step
+runs under `set -euo pipefail`, so a failed compare call fails the run loudly
+rather than merging on a guess; the PR just stays open until CI runs again.
+
+The job also takes a `concurrency` group, which the foundation's file does not
+need. Both guards are check-then-act, and the window is wide enough to drive a
+truck through: Dependabot opens its PRs seconds apart (measured upstream - three
+at `04:29:38Z`, `04:30:08Z`, `04:30:47Z`) and CI takes ~3 minutes, so with four
+ecosystems the runs overlap by construction. All of them read `behind_by == 0`,
+then each merges onto a main the others just moved, and every merge after the
+first lands a combination no CI run tested. `--match-head-commit` doesn't catch
+it - that pins the PR *head*, not the base.
+
+That is survivable in the foundation, where the untested tree just sits on main
+until a human looks. Here it is built and deployed to the homelab within
+minutes, and CI never runs on it, because of the `GITHUB_TOKEN` behaviour
+described next. Serialized, the second run re-reads main after the first merged,
+sees `behind_by > 0`, and declines. The cost is that GitHub keeps one pending
+entry per group, so with three at once the middle one is cancelled rather than
+queued - self-healing, since Dependabot rebases onto the new main and CI runs
+again.
+
+The second change is the third deviation. GitHub does not create workflow runs
+for events triggered by `GITHUB_TOKEN`, and that merge is one - so a self-merged
+Dependabot PR advances `main` **without** running CI, which means no
+`workflow_run`, which means no publish. Dependency updates would land in the
+repo and never reach the homelab, silently and indefinitely. That hole exists
+only because this template publishes and the foundation doesn't, which is why
+the foundation's file doesn't have to care.
+
+`workflow_dispatch` is one of the two documented exceptions to that rule, so
+`publish.yml` carries the trigger and auto-merge ends with
+`gh workflow run publish.yml --ref main` (plus the `actions: write` that needs).
+`main`'s tip is the commit that just merged, and trusting it is the same trust
+the merge already extended. Worst case if that `GITHUB_TOKEN` behaviour ever
+changes: a duplicate publish of an identical digest - wasteful, not wrong.
+
+That `GITHUB_TOKEN` behaviour is documented GitHub behaviour, not something
+reproduced here. The foundation has never actually auto-merged a Dependabot PR
+by workflow (PR #1 was merged by hand; #2, #3 and #9 closed unmerged), so it
+carries no evidence either way.
 
 Race-safe is not the same as safe. Majors auto-merge too, and CI's E2E flow
 covers auth and the SPA shell but not files, push, tokens, or MCP. That's an
