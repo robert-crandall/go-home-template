@@ -158,10 +158,10 @@ jobs:
 
   # The image the homelab pulls. linux/amd64 only - that is what the homelab
   # runs. Kept explicit rather than left to default to the runner's own
-  # architecture, so the published platform doesn't quietly follow a runner
-  # label. No `needs`: the Dockerfile builds the SPA in its own stage, because
-  # the image has to be reproducible from a clean checkout by someone who never
-  # ran the `web` job.
+  # architecture, so what gets built here doesn't quietly follow a runner label
+  # and drift from what publish.yml ships. No `needs`: the Dockerfile builds the
+  # SPA in its own stage, because the image has to be reproducible from a clean
+  # checkout by someone who never ran the `web` job.
   #
   # setup-buildx is here for the cache, not for the build. The runner's default
   # builder uses the `docker` driver, which cannot export cache at all - dropping
