@@ -82,7 +82,7 @@ type AppState struct {
 // Public because its whole purpose is to be read by a signed-out visitor on the
 // login page. Under the default gate that exposes one bit - whether a
 // non-deleted account exists - which `POST /api/auth/register` already gives
-// away by refusing. With open registration on it's a constant.
+// away by refusing. With open registration on, it's a constant.
 //
 // Note it only *describes* the operation here; the query runs per request, so
 // spec generation against a nil pool is unaffected.

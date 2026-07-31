@@ -15,7 +15,10 @@ export async function load() {
   //
   // Falling back to closed is the useful direction when the call fails: login
   // is the case for the whole life of a single-account app, and offering a
-  // registration the server would refuse anyway helps nobody.
+  // registration the server would refuse anyway helps nobody. Both failure
+  // shapes land there. openapi-fetch resolves rather than throwing on a non-2xx
+  // and leaves `data` undefined, so the `??` covers a refusal; the `catch` is
+  // for the network itself failing, which it does throw for.
   let registrationOpen = false;
   try {
     const { data } = await api.GET('/api/app');
