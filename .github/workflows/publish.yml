@@ -115,7 +115,7 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           # One tag, and it is the immutable one. :main moves in `promote`.
           tags: ${{ needs.guard.outputs.image }}:${{ needs.guard.outputs.version || needs.guard.outputs.sha_tag }}
@@ -167,11 +167,10 @@ jobs:
       group: publish-promote-main
       cancel-in-progress: false
     steps:
-      # No `docker/setup-buildx-action` here, deliberately. `imagetools create`
-      # is a registry-side manifest copy - it needs the buildx CLI plugin the
-      # runner image already ships, not a builder instance. Measured: a probe
-      # ran exactly this on a bare runner with no setup step and copied a
-      # two-platform index in 1.7s, source and result hashing identically.
+      # No `docker/setup-buildx-action` here, deliberately: `imagetools create`
+      # is a registry-side manifest copy and needs only the buildx CLI plugin
+      # the runner image already ships, not a builder instance. D9 carries the
+      # probe that measured it.
       #
       # Jobs get their own runners, so the login in `build` does not carry over.
       # This is the sort of omission that only ever fails once it is on main.
@@ -204,7 +203,7 @@ jobs:
             exit 0
           fi
           # A registry-side manifest copy of an image that already exists: no
-          # rebuild, no local daemon, multi-arch preserved.
+          # rebuild, no local daemon.
           docker buildx imagetools create -t "$IMAGE:main" "$IMAGE:$SHA_TAG"
           echo "promoted=true" >> "$GITHUB_OUTPUT"
 

@@ -319,16 +319,17 @@ docker build -t myapp .
 
 `Dockerfile` builds the SPA and the binary in their own stages, so the image is
 reproducible from a clean checkout - you don't need to have run `make build`
-first. Both build stages are pinned to `$BUILDPLATFORM` and Go cross-compiles, so
-a multi-arch build needs no emulation:
+first. The published image is `linux/amd64` only, which is what a plain
+`docker build` gives you on an amd64 host anyway. On an arm64 machine (an Apple
+Silicon Mac, say) ask for the target explicitly:
 
 ```sh
-# Validation only - a multi-platform result can't be loaded into the local
-# daemon, so this leaves nothing behind but a cache entry. This is what CI runs.
-docker buildx build --platform linux/amd64,linux/arm64 .
+# Both build stages are pinned to $BUILDPLATFORM and Go cross-compiles, so this
+# is a native build with no QEMU in it.
+docker buildx build --platform linux/amd64 --load -t myapp .
 
 # The pullable form, once you have somewhere to push to.
-docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/you/myapp:latest --push .
+docker buildx build --platform linux/amd64 -t ghcr.io/you/myapp:latest --push .
 ```
 
 ### Published images
@@ -552,7 +553,7 @@ throwaway Postgres: it boots healthy, an upload lands on the host and survives
 replacing the container, an unwritable `UPLOAD_DIR` refuses to start, uploads-off
 serves no file routes, and killing Postgres turns the container unhealthy. It
 needs Docker and takes a couple of minutes. It's not in CI - CI stops at building
-the image for both architectures.
+the image.
 
 ## The build order
 
