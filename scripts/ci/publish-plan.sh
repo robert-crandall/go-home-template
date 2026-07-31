@@ -63,6 +63,13 @@ push)
 	if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
 		version="${GITHUB_REF#refs/tags/}"
 		publish=true
+		# github.sha, not github.event.after. On an ANNOTATED tag push those
+		# differ: `after` is the tag *object* sha, which is not a commit and
+		# which actions/checkout cannot resolve. github.sha is dereferenced to
+		# the commit. Measured, not assumed - an annotated probe tag reported
+		# github.sha=cf4d877 (the commit) while payload.after=a139835 (the tag
+		# object), and checking out github.sha worked. So don't "fix" this to
+		# use `after`, and there's no need to switch to github.ref either.
 		ref="$SHA"
 		# No sha_tag: the release publishes :v1.2.3 and nothing else. That tag
 		# is already immutable, so a second immutable tag for the same digest
