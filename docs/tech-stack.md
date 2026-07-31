@@ -529,17 +529,20 @@ all:
   against a real Postgres healthcheck, or a restart policy that tolerates a few
   crash-loops on reboot. The template can't choose this for you because it
   doesn't know whether Postgres is even a container on your box.
-- `distroless:nonroot` runs as UID 65532, and if Docker has to create a missing
-  bind-mount source on Linux it creates it root-owned. `files.NewService`
-  write-probes `UPLOAD_DIR` and refuses to start if it can't write, so the host
-  directory has to exist and be **writable by** UID 65532. Ownership is the
-  simplest way there (`chown 65532:65532`) but group permissions or an ACL work
-  too, and on Docker Desktop or rootless Docker the mapping differs and it may
-  need nothing at all.
+- **Only if your app stores files** - with `UPLOAD_DIR` unset there is no volume
+  to mount and this whole bullet is skippable. `distroless:nonroot` runs as UID
+  65532, and if Docker has to create a missing bind-mount source on Linux it
+  creates it root-owned. `files.NewService` write-probes `UPLOAD_DIR` and
+  refuses to start if it can't write, so the host directory has to exist and be
+  **writable by** UID 65532. Ownership is the simplest way there
+  (`chown 65532:65532`) but group permissions or an ACL work too, and on Docker
+  Desktop or rootless Docker the mapping differs and it may need nothing at all.
 
-That refusal is a feature, not an obstacle: it means a missing or unwritable
-volume is a startup crash instead of photos written into a container layer that
-the next deploy discards.
+That refusal is a feature, not an obstacle: once you have asked for uploads, a
+missing or unwritable volume is a startup crash instead of photos written into a
+container layer that the next deploy discards. Leaving `UPLOAD_DIR` unset is a
+different and deliberate choice - the file routes simply aren't served (D11) -
+and is not the same thing as configuring it badly.
 
 ### D9 - CI, CD, and Dependabot
 
