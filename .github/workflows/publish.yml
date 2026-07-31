@@ -144,14 +144,21 @@ jobs:
     # buys something specific:
     #
     #   It guarantees: promote jobs never overlap, so a promote that runs after
-    #   a newer one sees the newer tip and declines. :main converges on the
-    #   newest successfully-published commit, and an older publish can never
-    #   overwrite a newer one.
+    #   a newer one sees the newer tip and declines. No older publish can
+    #   overwrite a newer one - which is the failure the issue names, gone.
     #
     #   It does not guarantee: that the re-read and the tag move are atomic. A
     #   newer commit can land in between, in which case :main goes to the older
     #   image and then the newer promote moves it forward. Transient and
-    #   self-correcting - which is the failure the issue names, gone.
+    #   self-correcting.
+    #
+    #   Nor does it guarantee: that :main ends up on the newest commit that
+    #   published. GitHub keeps one pending entry per group, so with A running,
+    #   B pending and C queued, B is cancelled - and if C then declines or
+    #   fails, :main stays at A even though B's immutable tag exists. :main is
+    #   always *a* commit that published successfully and is never older than
+    #   one that already promoted; it is not a maximum. Correctness survives
+    #   because a cancelled job cannot write. D9 has the same three points.
     #
     # cancel-in-progress is false on purpose: cancelling a promote mid-write is
     # exactly the thing this group exists to prevent.

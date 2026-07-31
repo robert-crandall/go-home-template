@@ -11,9 +11,10 @@
 # on CI.
 #
 # Copied from robert-crandall/go-home-server, which is where this design was
-# worked out, with two changes: the stale-base guard reads the API instead of a
-# payload field that is empty in practice, and there is a final `gh workflow run`
-# step. Both are commented where they happen.
+# worked out, with two changes: the stale-base guard asks the API directly
+# rather than depending on the payload's shape (an equivalent check, not a
+# repair - see below), and there is a final `gh workflow run` step. Both are
+# commented where they happen.
 name: Dependabot auto-merge
 
 on:
