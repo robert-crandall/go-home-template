@@ -67,11 +67,12 @@ test('a chosen theme applies before the app boots, and survives reload, restart,
 
   await test.step('the theme is right with no application JavaScript at all', async () => {
     // This is the "no flash of the wrong theme" criterion, and it's measured by
-    // removing the only thing that could paper over a failure. Every script is
-    // aborted, so nothing hydrates and nothing re-applies the theme late; if the
-    // page is dark anyway, the inline script in app.html did it before the first
-    // paint. CSS is allowed through, which is what makes the colour check mean
-    // something.
+    // removing the only thing that could paper over a failure. Every external
+    // script request is aborted, so nothing hydrates and nothing re-applies the
+    // theme late; inline scripts still run, which is the point - the one in
+    // app.html is what's on trial. If the page is dark anyway, that script did
+    // it before the first paint. CSS is allowed through, which is what makes
+    // the colour check mean something.
     //
     // Measured, not assumed, in two probes:
     //

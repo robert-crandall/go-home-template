@@ -18,24 +18,27 @@
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1e293b" />
     <!--
-      Applies a saved theme before the first paint. This has to be inline and
-      synchronous, and it has to sit above SvelteKit's injected head content: a
+      Applies a saved theme before the first paint. This has to be a classic
+      inline script in <head>, so it runs while the document is still parsing: a
       static SPA that waits for its own JavaScript to set the theme paints the
       default palette for a frame first, and the snap to dark is exactly what
-      people notice.
+      people notice. It sits above SvelteKit's injected head content to keep it
+      as early as possible - that ordering is a preference, not the correctness
+      boundary, since the stylesheet below is render-blocking and this script has
+      run before anything paints either way.
 
       (Don't name that placeholder in prose here. SvelteKit substitutes the first
       occurrence of the token, so a mention inside this comment swallows the
       stylesheet link into the comment and leaves the real placeholder below
       untouched - an unstyled page, from a sentence about styling.)
 
-      Only an explicit choice is written. With no attribute at all, daisyUI's
-      `--prefersdark` rule - scoped to `:root:not([data-theme])` - decides in
-      pure CSS, which is both flash-proof by construction and live, so a
-      first-time visitor who flips their OS to dark sees it immediately.
+      Only an explicit choice is written to `data-theme`. With no attribute at
+      all, daisyUI's `--prefersdark` rule - scoped to `:root:not([data-theme])` -
+      decides in pure CSS, which is both flash-proof by construction and live, so
+      a first-time visitor who flips their OS to dark sees it immediately.
 
       web/tests/theme.spec.ts proves this script does the work, by aborting every
-      script request and checking the theme is right anyway.
+      external script request and checking the theme is right anyway.
 
       See web/src/lib/theme.svelte.ts for the other half. The two files
       duplicate one thing on purpose: the storage key and the set of valid

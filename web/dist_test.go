@@ -6,9 +6,17 @@ import (
 	"image"
 	_ "image/png"
 	"io/fs"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+// moduleAttr matches a `type=module` attribute in any spelling HTML allows -
+// unquoted, single- or double-quoted, any case, spaces around the `=`. A plain
+// `strings.Contains(tag, "type=\"module\"")` would miss all but one of those,
+// which is a false pass in exactly the test whose job is to catch an accidental
+// edit.
+var moduleAttr = regexp.MustCompile(`(?i)\btype\s*=\s*("module"|'module'|module\b)`)
 
 // TestDistHasIndex guards the mistake server.New panics on: a missing fs.Sub,
 // which leaves index.html buried under build/ instead of at the root.
@@ -63,7 +71,7 @@ func TestIndexHTMLAppliesThemeBeforeBody(t *testing.T) {
 		t.Fatal("the theme storage read is not inside a <script> tag")
 	}
 	tag := html[open:script]
-	if strings.Contains(tag, "type=\"module\"") || strings.Contains(tag, "type='module'") {
+	if moduleAttr.MatchString(tag) {
 		t.Error("the inline theme script is a module, so the browser defers it until after parsing - it has to be a classic script to run before the first paint")
 	}
 

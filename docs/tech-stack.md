@@ -448,10 +448,11 @@ in every manual check.
 It does **not** ship a service worker: SvelteKit auto-registers
 `src/service-worker.ts` in production builds, so a half-considered one is an
 asset-caching bug waiting to happen in every app that forgets it's there. See
-"Deliberately not here" for the web push consequence. Without one the app is
-installable-adjacent rather than installable, which is the intended trade: the
-metadata is there for whoever wants it, and nothing caches stale assets for
-whoever doesn't.
+"Deliberately not here" for the web push consequence. What that costs is offline
+support and asset caching, not installability - Chrome dropped the service
+worker requirement for install, and `Page.getAppManifest` reports no errors for
+what ships here. The app just never asks to be installed, which is the browser's
+job to offer anyway.
 
 ### D7 - One binary, no reverse proxy in the container
 
