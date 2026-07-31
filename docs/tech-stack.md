@@ -1124,7 +1124,7 @@ defaulting `MODULE` from the `origin` remote so the usual case is just
 declaration, internal imports, the app title, binary name, `package.json` name,
 and the PWA manifest.
 
-Two constraints on its design:
+Three constraints on its design:
 
 - **A name alone isn't enough.** `github.com/<owner>/<repo>` can't be derived
   from `my-app`, which is why `MODULE` exists as a separate input.
