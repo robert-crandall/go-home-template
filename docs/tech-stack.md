@@ -454,7 +454,9 @@ works: Chrome dropped the fetch-handler requirement for installing from the
 menu (v108 mobile, v112 desktop), and `Page.getAppManifest` reports no errors
 for what ships here. What still requires a `fetch()` handler is the heuristic
 that offers the prompt unasked - so the app is installable, it just never asks.
-See [Chrome's post on the criteria change](https://developer.chrome.com/blog/update-install-criteria).
+See [Chrome's post on the criteria change][install-criteria].
+
+[install-criteria]: https://developer.chrome.com/blog/update-install-criteria
 
 ### D7 - One binary, no reverse proxy in the container
 
