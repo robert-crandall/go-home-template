@@ -186,10 +186,11 @@ the contract with `make spec`, then call that route from the tool.
 ## Auth and the screens
 
 The template ships the smallest thing that proves auth works end to end:
-`/login` (log in / register) and a guarded `/` that greets you, inside a
-navigation shell with one demo destination in it. The signed-in email, the
-theme picker and **Log out** live in the shell's footer rather than on the
-page, so every page you add gets them. That's it - the rest is yours.
+`/login` (log in, plus register while registration is open) and a guarded `/`
+that greets you, inside a navigation shell with one demo destination in it. The
+signed-in email, the theme picker and **Log out** live in the shell's footer
+rather than on the page, so every page you add gets them. That's it - the rest
+is yours.
 
 Three pieces make it work, and they're all small enough to read in a sitting:
 
@@ -216,6 +217,21 @@ because in that case there is no server response to render.
 Registration is gated by `ALLOW_OPEN_REGISTRATION`. It defaults to `false`,
 which means "the first account only" - fine for a single-user app, which is what
 this template is shaped for. Set it to `true` if you want anyone to sign up.
+
+`/login` reads that state rather than guessing at it. `GET /api/app` returns
+`{ "registrationOpen": bool }` from `auth.Service.RegistrationOpen`, which runs
+the same predicate the register handler runs, and the page shows the Log in /
+Register pair only when the answer is yes - opening on Register, since that's
+the thing to do at that moment. By default that means the pair is gone once a
+non-deleted account exists, and `/login` is just a login form, instead of a
+Register tab that can only ever answer "registration is closed". With
+`ALLOW_OPEN_REGISTRATION=true` the answer is always yes, so the pair stays for
+good.
+
+The state is advisory. Under the default gate the register handler re-checks
+inside its transaction, holding a database advisory lock, so a page that loaded
+while registration was open can still lose the race - and it renders the
+server's refusal rather than pretending that can't happen.
 
 ## Adding a page
 
@@ -349,6 +365,12 @@ refusal strings against a real database instead:
 TEST_DATABASE_URL=postgres://localhost:5432/go-home-template_test?sslmode=disable \
   go test ./internal/app/ -run TestAuthRefusalStrings
 ```
+
+`403 registration is closed` moved half a step in the same direction. Now that
+`/login` hides the Register control once an account exists, the only way to
+submit a registration the server will refuse is to lose the race - so the
+browser suite stubs `GET /api/app` to `{"registrationOpen": true}` for that one
+step, which is what a page that loaded a moment too early is holding anyway.
 
 ### Git worktrees
 

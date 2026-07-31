@@ -45,8 +45,8 @@ github.com/pressly/goose/v3 v3.27.2 h1:FjKNzcmMdGrQlSIu5alMSmakQtJFBgtw+A0bb1p/L
 github.com/pressly/goose/v3 v3.27.2/go.mod h1:qWW+/8dkVtJYjJrbIpwD5xxnEJTUKvxkQ9JKQp9LaIM=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
-github.com/robert-crandall/go-home-server v0.1.5 h1:oHwGH+wDMO+1IjpAOtoldxId+35BiA/o70THgf8/Rpg=
-github.com/robert-crandall/go-home-server v0.1.5/go.mod h1:BC1z11VdayzUx4dccSR1LYzpPGgbHTYXtQBigbzMOco=
+github.com/robert-crandall/go-home-server v0.1.6 h1:IN9fFluMihqsAYBYAi/gvKhkObQdDsFD3kMjWnC+MRE=
+github.com/robert-crandall/go-home-server v0.1.6/go.mod h1:BC1z11VdayzUx4dccSR1LYzpPGgbHTYXtQBigbzMOco=
 github.com/segmentio/asm v1.2.1 h1:DTNbBqs57ioxAD4PrArqftgypG4/qNpXoJx8TVXxPR0=
 github.com/segmentio/asm v1.2.1/go.mod h1:BqMnlJP91P8d+4ibuonYZw9mfnzI9HfxselHZr5aAcs=
 github.com/segmentio/encoding v0.5.4 h1:OW1VRern8Nw6ITAtwSZ7Idrl3MXCFwXHPgqESYfvNt0=
