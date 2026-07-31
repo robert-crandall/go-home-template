@@ -816,7 +816,7 @@ Watchtower is watching.
 workflow against any ref from the Actions UI, and a dispatch off a feature
 branch would otherwise move `:main` to unreviewed code. What it does *not* check
 is whether `main` is currently green - it publishes the tip regardless. For the
-Dependabot caller that's fine (CI passed on that head and the base-sha guard
+Dependabot caller that's fine (CI passed on that head and the staleness guard
 proved `main` hadn't moved); for a human clicking "Run workflow" it's a manual
 override that skips CI. Gating on the actor would break that escape hatch, which
 is worth having when a publish needs re-running.
