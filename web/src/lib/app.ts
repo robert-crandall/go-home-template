@@ -15,8 +15,16 @@
  * Worth knowing: `svelte-check` does *not* validate this path - `vite/client`
  * declares `*?raw` as a wildcard module, so `make check` passes over a typo and
  * the build is what fails. There is deliberately no fallback string; a fallback
- * would be the third copy this file exists to avoid.
+ * would be the third copy this file exists to avoid. If the manifest has no
+ * `name`, that is a broken manifest - the OS has nothing to label the icon
+ * with either - so this says so instead of rendering an empty header.
  */
 import manifest from '../../static/manifest.webmanifest?raw';
 
-export const appName: string = (JSON.parse(manifest) as { name: string }).name;
+const { name } = JSON.parse(manifest) as { name?: unknown };
+
+if (typeof name !== 'string' || name === '') {
+  throw new Error('static/manifest.webmanifest has no "name": the app has no display name to show.');
+}
+
+export const appName: string = name;
