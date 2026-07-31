@@ -6,11 +6,10 @@
 #   make init MODULE=github.com/you/thing NAME=Thing
 #
 # There are three identifiers to replace and they are passed in as arguments,
-# never written here. That is deliberate: bash reads a script lazily, so a
-# script that rewrites its own text mid-run is a real bug, and the final "no old
-# identifier survives" check would otherwise trip on this file forever. The
-# Makefile is where the template's identity lives; make has already read it by
-# the time we rewrite it.
+# never written here. That is deliberate: bash reads a script lazily, so this
+# file stays in the leftover scan but is never a rewrite candidate. The Makefile
+# is where the template's identity lives; make has already read it by the time
+# we rewrite it.
 set -euo pipefail
 
 old_module=${1:?usage: init.sh OLD_MODULE OLD_NAME OLD_SLUG}
@@ -59,18 +58,32 @@ if [ "$module" = "$old_module" ]; then
   exit 1
 fi
 
+if [ "$old_name" = "$old_slug" ] && [ "$name" != "$slug" ]; then
+  echo "NAME can't diverge from the slug: current APP_NAME and APP_SLUG are both \"$old_slug\", so their tracked uses are indistinguishable. Keep NAME=$slug or edit the display name after init." >&2
+  exit 1
+fi
+
 echo "==> module: $old_module -> $module"
 echo "==> name:   $old_name -> $name"
 echo "==> slug:   $old_slug -> $slug"
 
-# Collect the tracked text files. Binary files are skipped so image assets don't
-# get mangled, and the text test runs per file rather than through
-# `grep -IlZ | xargs -0` because BSD and GNU grep disagree about which flag
-# means NUL-delimited output.
+# Collect the tracked text files. The ADR records this template's identity on
+# purpose, so that one exact path is excluded from both rewriting and scanning.
+# Binary files are skipped so image assets don't get mangled, and the text test
+# runs per file rather than through `grep -IlZ | xargs -0` because BSD and GNU
+# grep disagree about which flag means NUL-delimited output.
 files=()
+rewrite_files=()
+old_patterns=(-e "$old_module" -e "$old_name" -e "$old_slug")
 while IFS= read -r -d '' file; do
+  if [ "$file" = docs/tech-stack.md ]; then
+    continue
+  fi
   if grep -Iq . "$file" 2>/dev/null; then
     files+=("$file")
+    if [ "$file" != scripts/init.sh ] && grep -qF "${old_patterns[@]}" -- "$file"; then
+      rewrite_files+=("$file")
+    fi
   fi
 done < <(git ls-files -z)
 
@@ -79,11 +92,14 @@ if [ ${#files[@]} -eq 0 ]; then
   exit 1
 fi
 
+if [ ${#rewrite_files[@]} -eq 0 ]; then
+  echo "none of the old identifiers occur in tracked text - check APP_MODULE, APP_NAME, and APP_SLUG" >&2
+  exit 1
+fi
+
 # All three substitutions happen in one pass, longest match first. Sequential
 # passes would cascade: the slug is a substring of the module path, and a new
-# name that contains an old one (`MODULE=github.com/you/go-home-template-plus`)
-# would get rewritten a second time into `go-home-template-plus-plus` - silently,
-# because by then the old identifier really is gone and the check below passes.
+# name that contains the old slug would otherwise get rewritten a second time.
 # One pass with an alternation can't do that: every byte is rewritten at most
 # once, and the longest-first ordering means the module path wins over its own
 # trailing slug.
@@ -100,17 +116,25 @@ perl -pi -e '
     $re = join "|", map { quotemeta } sort { length($b) <=> length($a) } keys %map;
   }
   s/($re)/$map{$1}/g;
-' -- "${files[@]}"
+' -- "${rewrite_files[@]}"
 
 # The check that makes this reliable rather than a checklist people half-follow.
 # An old identifier that survives *inside* the new identity is not a leftover -
-# `go-home-template-plus` contains `go-home-template` by construction - so those
-# get reported as unchecked rather than failed.
+# the new slug can contain the old slug by construction - so those get reported
+# as unchecked rather than failed.
 stale=()
+checked=0
+unchecked=0
 for old in "$old_module" "$old_name" "$old_slug"; do
   case "$module|$name|$slug" in
-    *"$old"*) echo "note: not checking for \"$old\" - your new identity contains it" ;;
-    *) stale+=(-e "$old") ;;
+    *"$old"*)
+      echo "note: not checking for \"$old\" - your new identity contains it"
+      unchecked=$((unchecked + 1))
+      ;;
+    *)
+      stale+=(-e "$old")
+      checked=$((checked + 1))
+      ;;
   esac
 done
 
@@ -122,6 +146,14 @@ if [ ${#stale[@]} -gt 0 ]; then
     echo "$leftovers" >&2
     exit 1
   fi
+fi
+
+if [ "$unchecked" -eq 0 ]; then
+  echo "==> leftover scan: clean"
+elif [ "$checked" -eq 0 ]; then
+  echo "==> leftover scan: skipped - every old identifier occurs in the new identity"
+else
+  echo "==> leftover scan: clean for $checked checked identifier(s); $unchecked unchecked"
 fi
 
 echo

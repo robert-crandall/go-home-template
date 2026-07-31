@@ -1120,30 +1120,47 @@ module path.
 
 So the template ships `make init MODULE=github.com/owner/repo NAME=my-app`,
 defaulting `MODULE` from the `origin` remote so the usual case is just
-`make init`. It runs `go mod edit -module`, rewrites internal imports, and
-updates the app title, binary name, `package.json` name, and
-the PWA manifest.
+`make init`. One longest-match-first pass rewrites `go.mod`'s module
+declaration, internal imports, the app title, binary name, `package.json` name,
+and the PWA manifest.
 
-Two constraints on its design:
+Three constraints on its design:
 
 - **A name alone isn't enough.** `github.com/<owner>/<repo>` can't be derived
   from `my-app`, which is why `MODULE` exists as a separate input.
+- **This is a bootstrap, not a general refactoring tool.** A bare init makes the
+  display name and slug identical. On a later run their existing occurrences
+  are indistinguishable, so init refuses a distinct `NAME` rather than silently
+  assigning the slug to display-name fields. Keep the names together for that
+  run or edit the display name afterward.
 - **Rename first, generate second.** `docs/openapi.json` embeds the API title and
   `web/build` embeds the manifest, so running `make setup` before `make init`
   leaves generated output carrying the old identity. `make init` doesn't
-  regenerate anything - it rewrites every tracked *text* file in one pass
-  (`scripts/init.sh:70-103`) and then greps those same files for leftovers
-  (`scripts/init.sh:117-124`), failing if any old identifier survives. That
-  works out because `docs/openapi.json` is tracked text and gets rewritten in
-  the same pass, and `web/build/` is gitignored output that `make setup`
-  rebuilds - which is the very next thing init.sh tells you to run. The
-  leftover check is what makes this reliable rather than a checklist people
-  half-follow.
+  regenerate anything - it rewrites matching tracked *text* files in one pass
+  and then scans every tracked text file in the same candidate set, failing if
+  any checked old identifier survives. That works out because
+  `docs/openapi.json` is tracked text and gets rewritten in the same pass, and
+  `web/build/` is gitignored output that `make setup` rebuilds - which is the
+  very next thing init.sh tells you to run. The leftover check is what makes
+  this reliable rather than a checklist people half-follow.
 
   The PNG icons are skipped by that pass, because init.sh's `grep -Iq .` test
   treats them as binary. That's correct rather than a gap: they carry no
   identity to rewrite. `manifest.webmanifest` is text, so its `name` and
   `short_name` are rewritten like everything else.
+
+The sole candidate-set exception is this file, `docs/tech-stack.md`. An ADR for
+the source template has to keep naming the source template, so both rewrite and
+scan exclude that exact path. The integration test makes the boundary
+non-vacuous: it tracks `docs/tech-stack-neighbor.md`, plants an old identifier
+there after rewriting but immediately before the real scan, and requires init
+to fail with that neighboring path. Excluding `docs/` would fail the test.
+
+Changing the module basename also changes `mcp.AppName()`, so the MCP handshake,
+`~/bin/<app>-mcp`, and `~/.config/<app>.json` move together. Init deliberately
+does not search for or mutate home-directory state. Under the rename-first rule
+none exists yet; the README gives the three manual cleanup steps for a late
+first rename.
 
 The GHCR path is deliberately *not* rewritten: the workflow uses
 `${{ github.repository }}` so there's nothing to rename.

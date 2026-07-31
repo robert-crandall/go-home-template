@@ -36,13 +36,15 @@ right thing. Override either half if not:
 make init MODULE=github.com/you/thing NAME=Thing
 ```
 
-It rewrites the Go module path, the app title, and the binary name across every
-tracked text file in one pass, then fails loudly if any of the old identity
-survives. (If your new name contains one of the old identifiers - `thing` inside
-`go-home-template-thing`, say - it says so and skips that one, because there's
-no way to tell a leftover from your own name.) Run it before you write any code:
-it's a blanket find-and-replace, and it's much less interesting when there's
-only a template underneath it.
+It rewrites the Go module path, the app title, and the binary name across
+tracked text in one pass, then prints the leftover-scan result. The one exception
+is `docs/tech-stack.md`: that ADR records this source template's identity on
+purpose. Every other tracked text file is still scanned, and a leftover fails
+the rename. (If your new name contains one of the old identifiers - `thing`
+inside `go-home-template-thing`, say - it reports that identifier as unchecked,
+because there's no way to distinguish a leftover from your own name.) Run it
+before you write any code: it's a blanket find-and-replace, and it's much less
+interesting when there's only a template underneath it.
 
 Edit `.env` (at minimum `DATABASE_URL`), create that database, then:
 
@@ -127,6 +129,13 @@ rm /tmp/my-app.cookies
 this file; the file takes precedence over a local `.env`. The config path is
 `$XDG_CONFIG_HOME/<app>.json` when `XDG_CONFIG_HOME` is set, and
 `~/.config/<app>.json` otherwise.
+
+The main module's basename controls the MCP handshake name, installed binary,
+and config filename together. `make init` changes all three, which is why it
+belongs before `make install-mcp` or config creation. If you run that first
+rename after configuring MCP, move the config to the new `<app>.json`, rerun
+`make install-mcp`, and remove the old binary; init never edits files under your
+home directory.
 
 With the app running and the token valid, the shell mode proves the harness is
 live:
