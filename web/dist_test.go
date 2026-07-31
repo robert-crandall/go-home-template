@@ -15,8 +15,9 @@ import (
 // unquoted, single- or double-quoted, any case, spaces around the `=`. A plain
 // `strings.Contains(tag, "type=\"module\"")` would miss all but one of those,
 // which is a false pass in exactly the test whose job is to catch an accidental
-// edit.
-var moduleAttr = regexp.MustCompile(`(?i)\btype\s*=\s*("module"|'module'|module\b)`)
+// edit. The leading whitespace requirement is doing real work: `\btype` would
+// also match inside `data-type`, since a hyphen is a word boundary.
+var moduleAttr = regexp.MustCompile(`(?i)(?:^|\s)type\s*=\s*("module"|'module'|module\b)`)
 
 // TestDistHasIndex guards the mistake server.New panics on: a missing fs.Sub,
 // which leaves index.html buried under build/ instead of at the root.
