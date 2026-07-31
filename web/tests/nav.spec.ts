@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { navItems, navSections } from '../src/lib/nav';
+import { currentHref, navItems } from '../src/lib/nav';
 
 /**
  * The navigation shell, against the real binary.
@@ -26,15 +26,22 @@ const DESKTOP = { width: 1280, height: 720 };
 const PHONE = { width: 390, height: 844 };
 
 // The first destination the shell can navigate away from and back to. `/` is a
-// prefix of everything, so `isCurrent` special-cases it, which makes any other
+// prefix of everything, so `currentHref` special-cases it, which makes any other
 // entry the interesting one for both history and deep links.
 const elsewhere = navItems.find((item) => item.href !== '/');
-const grouped = navSections().filter((section) => section.label !== undefined);
+// Straight off `navItems`, not off `navSections()`: deriving the expectation
+// from the function under test would let a regression that dropped every label
+// turn this into a skip instead of a failure.
+const groups = [...new Set(navItems.map((item) => item.group).filter((g) => g !== undefined))];
 
 const primaryNav = (page: Page) => page.getByRole('navigation', { name: 'Primary' });
 const destination = (page: Page, label: string) =>
   primaryNav(page).getByRole('link', { name: label, exact: true });
 const menuButton = (page: Page) => page.getByRole('button', { name: 'Menu' });
+// `<dialog>` specifically, not the nav inside it: an empty drawer still holding
+// the top layer would be an invisible focus trap over an inert page, and a nav
+// that rendered nothing looks identical to one that closed.
+const openDialogs = (page: Page) => page.locator('dialog[open]');
 
 /**
  * The requests go through the browser's own `fetch`, from a page already on the
@@ -82,6 +89,11 @@ async function onlyCurrent(page: Page, href: string) {
  * that matters: without it a link hardcoded into `AppShell.svelte` - the exact
  * thing "one entry in one array" is a promise against - would go unnoticed,
  * because every entry it looked for would still be there.
+ *
+ * This also covers an entry whose route doesn't exist, which is not obvious:
+ * SvelteKit renders an unmatched path against the *root* error boundary, so
+ * the `(app)` layout - and with it the whole shell - is gone, and every lookup
+ * below fails. Measured by pointing an entry at a route that isn't there.
  */
 async function offersExactly(page: Page) {
   await expect(primaryNav(page), 'exactly one primary nav should be exposed').toHaveCount(1);
@@ -136,24 +148,46 @@ test('the shell puts one primary nav on screen, and every destination is reachab
       await destination(page, item.label).click();
       await expect(page).toHaveURL(item.href);
       await expect(primaryNav(page), 'the drawer should close behind you').toHaveCount(0);
+      await expect(openDialogs(page), 'and release the page it was covering').toHaveCount(0);
     }
   });
 });
 
 test('a group renders as a heading, not as a destination', async ({ page }) => {
-  test.skip(grouped.length === 0, 'no nav entry carries a group');
+  test.skip(groups.length === 0, 'no nav entry carries a group');
 
   await signIn(page);
   await page.setViewportSize(DESKTOP);
   await page.goto('/');
 
-  for (const section of grouped) {
-    const heading = page.getByRole('heading', { name: section.label!, exact: true });
-    await expect(heading).toBeVisible();
-    // A section header is a label for the destinations under it, so it must not
-    // look like one of them.
-    await expect(page.getByRole('link', { name: section.label!, exact: true })).toHaveCount(0);
+  for (const group of groups) {
+    await expect(page.getByRole('heading', { name: group, exact: true })).toBeVisible();
+    // A section header labels the destinations under it, so it must not look
+    // like one of them.
+    await expect(page.getByRole('link', { name: group, exact: true })).toHaveCount(0);
   }
+});
+
+/**
+ * The one piece of nav logic a browser can't demonstrate with the destinations
+ * this template ships: `currentHref` is pure, and the case that bites is two
+ * entries where one href is a prefix of the other. That is a shape someone
+ * reaches by adding two lines to `navItems`, so it's pinned here rather than
+ * left to whoever adds them.
+ */
+test('the marker picks the most specific destination, not every match', () => {
+  const items = [
+    { href: '/', label: 'Home' },
+    { href: '/notes', label: 'Notes' },
+    { href: '/notes/archive', label: 'Archive' }
+  ];
+
+  expect(currentHref('/', items)).toBe('/');
+  expect(currentHref('/notes', items)).toBe('/notes');
+  expect(currentHref('/notes/archive', items)).toBe('/notes/archive');
+  expect(currentHref('/notes/archive/2024', items)).toBe('/notes/archive');
+  expect(currentHref('/notes/123', items)).toBe('/notes');
+  expect(currentHref('/elsewhere', items)).toBeUndefined();
 });
 
 test('history and deep links keep the marker honest', async ({ page }) => {
@@ -179,7 +213,7 @@ test('history and deep links keep the marker honest', async ({ page }) => {
   await test.step('a deep link with a trailing slash lands marked', async () => {
     // The trailing slash is the point: the request reaches the Go binary, which
     // has no file for it and serves index.html, and SvelteKit normalises the
-    // pathname before anything renders. `isCurrent` leans on that normalisation
+    // pathname before anything renders. `currentHref` leans on that normalisation
     // rather than doing its own, so this is what keeps the lean honest.
     await page.goto(`${target.href}/`);
 

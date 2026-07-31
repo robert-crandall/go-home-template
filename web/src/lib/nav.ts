@@ -50,10 +50,19 @@ export function navSections(items: NavItem[] = navItems): NavSection[] {
 }
 
 /**
+ * The destination the shell should mark, or `undefined` when the current page
+ * isn't under any of them.
+ *
  * Prefix matching, not the exact match you might reach for first: a section
  * with child routes - `/notes/123` under a `/notes` destination - should still
  * mark its destination. That is not nested navigation; the shell still renders
  * exactly one flat level.
+ *
+ * **Longest match wins**, which is the part worth keeping. Ask each item
+ * independently whether it matches and a nav carrying both `/notes` and
+ * `/notes/archive` marks *both* of them on `/notes/archive` - two entries in
+ * one flat array is exactly the thing this file makes easy, so that is a
+ * shipped bug rather than a hypothetical one.
  *
  * `/` is special-cased because it is a prefix of literally everything.
  *
@@ -63,7 +72,18 @@ export function navSections(items: NavItem[] = navItems): NavSection[] {
  * pathname to `/second` by the time anything renders - measured, not assumed.
  * `nav.spec.ts` links with the slash so that stays true.
  */
-export function isCurrent(item: NavItem, pathname: string): boolean {
-  if (item.href === '/') return pathname === '/';
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+export function currentHref(pathname: string, items: NavItem[] = navItems): string | undefined {
+  let best: string | undefined;
+
+  for (const { href } of items) {
+    if (!matches(href, pathname)) continue;
+    if (best === undefined || href.length > best.length) best = href;
+  }
+
+  return best;
+}
+
+function matches(href: string, pathname: string): boolean {
+  if (href === '/') return pathname === '/';
+  return pathname === href || pathname.startsWith(`${href}/`);
 }

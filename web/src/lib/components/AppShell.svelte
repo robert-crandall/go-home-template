@@ -3,7 +3,7 @@
   import { afterNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import { appName } from '$lib/app';
-  import { isCurrent, navSections } from '$lib/nav';
+  import { currentHref, navSections } from '$lib/nav';
   import SignOutButton from './SignOutButton.svelte';
   import ThemePicker from './ThemePicker.svelte';
 
@@ -19,6 +19,7 @@
   let open = $state(false);
 
   const sections = $derived(navSections());
+  const current = $derived(currentHref(page.url.pathname));
   const email = $derived(page.data.user?.email ?? '');
 
   async function openDrawer() {
@@ -54,13 +55,13 @@
       {/if}
       <ul aria-labelledby={section.label ? `${idPrefix}-section-${index}` : undefined}>
         {#each section.items as item (item.href)}
-          {@const current = isCurrent(item, page.url.pathname)}
+          {@const here = item.href === current}
           <li>
             <a
               href={item.href}
-              aria-current={current ? 'page' : undefined}
+              aria-current={here ? 'page' : undefined}
               onclick={() => drawer?.close()}
-              class="block rounded-lg px-3 py-2 text-sm {current
+              class="block rounded-lg px-3 py-2 text-sm {here
                 ? 'bg-base-200 font-semibold text-base-content'
                 : 'font-normal text-base-content/60 hover:bg-base-200'}"
             >
@@ -153,7 +154,12 @@
   holding focus. Left visible it's a drawer you can see and dismiss, and it is
   only ever opened from a button that `lg:hidden` has already taken away.
 -->
-<dialog bind:this={drawer} class="modal modal-start" onclose={() => (open = false)}>
+<dialog
+  bind:this={drawer}
+  class="modal modal-start"
+  aria-label="Menu"
+  onclose={() => (open = false)}
+>
   {#if open}
     <div class="modal-box flex w-72 flex-col rounded-none p-0">
       {@render brand()}

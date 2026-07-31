@@ -186,9 +186,10 @@ the contract with `make spec`, then call that route from the tool.
 ## Auth and the screens
 
 The template ships the smallest thing that proves auth works end to end:
-`/login` (log in / register) and a guarded `/` that greets you and offers a
-logout button, inside a navigation shell with one demo destination in it. That's
-it - the rest is yours.
+`/login` (log in / register) and a guarded `/` that greets you, inside a
+navigation shell with one demo destination in it. The signed-in email, the
+theme picker and **Log out** live in the shell's footer rather than on the
+page, so every page you add gets them. That's it - the rest is yours.
 
 Three pieces make it work, and they're all small enough to read in a sitting:
 

@@ -531,10 +531,17 @@ sidebar is `display: none` below `lg`; the drawer renders *nothing at all* until
 it opens, which also keeps a second copy of the footer out of the DOM, so
 `auth.spec.ts` can keep reaching for one email and one form without scoping.
 
-`isCurrent` is prefix matching, not the exact match you reach for first, so
+`currentHref` is prefix matching, not the exact match you reach for first, so
 `/notes/123` still marks a `/notes` destination; `/` is special-cased because
 it's a prefix of everything. That is not nested navigation - the shell renders
 exactly one flat level and a section's children are the section's problem.
+
+It resolves **one** destination for a pathname - longest match - rather than
+asking each entry independently whether it matches. Ask independently and a nav
+carrying both `/notes` and `/notes/archive` marks both of them on
+`/notes/archive`, and two entries in one flat array is precisely what this
+model makes easy. `nav.spec.ts` pins that case as a plain function call, since
+the template's own two destinations can't produce it in a browser.
 
 **The phone nav is a drawer, and it is a native `<dialog>`.** An earlier cut of
 this shell used a bottom bar with `flex-1` items and no overflow menu; it worked,
