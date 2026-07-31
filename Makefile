@@ -7,7 +7,7 @@ APP_MODULE ?= github.com/robert-crandall/go-home-template
 APP_NAME   ?= Go Home Template
 APP_SLUG   ?= go-home-template
 
-.PHONY: help init setup build run dev test check spec e2e docker-smoke clean
+.PHONY: help init setup build install-mcp run dev test check spec e2e docker-smoke clean
 
 # So a frontend build that fails halfway doesn't leave an index.html behind that
 # makes the target below look satisfied.
@@ -31,6 +31,11 @@ setup: ## First run after cloning: deps, upload dir, .env, and a frontend build
 build: ## Build the frontend, then the binary into bin/
 	cd web && bun run build
 	go build -o bin/$(APP_SLUG) ./cmd/server
+
+install-mcp: ## Build and install the MCP server into ~/bin
+	@mkdir -p "$(HOME)/bin"
+	go build -o "$(HOME)/bin/$(APP_SLUG)-mcp" ./cmd/mcp
+	@echo "installed $(HOME)/bin/$(APP_SLUG)-mcp"
 
 run: ## Run the built binary
 	./bin/$(APP_SLUG)

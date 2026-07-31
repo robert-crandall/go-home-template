@@ -66,7 +66,110 @@ the dev loop misbehaves.
 
 Other targets: `make test` (Go tests), `make check` (frontend type check),
 `make spec` (regenerate the API contract), `make e2e` (browser tests),
-`make clean`, and `make help`.
+`make install-mcp` (install the MCP server), `make clean`, and `make help`.
+
+## MCP server
+
+The template includes a zero-tool MCP server. It is deliberately empty, but it
+already loads an API token, verifies it against the running app, and can speak
+MCP over stdio. Install it with:
+
+```sh
+make install-mcp
+# installed /Users/you/bin/go-home-template-mcp
+```
+
+The target always writes `~/bin/go-home-template-mcp`. If that directory is not
+on `PATH`, use the absolute path or add it for the current shell:
+
+```sh
+export PATH="$HOME/bin:$PATH"
+```
+
+Put that export in your shell profile if you want it on future shells too.
+
+The MCP server uses a personal API token, not the browser's session cookie.
+First log in to the running app (use `/api/auth/register` instead for its first
+account), keeping the session cookie in a temporary jar:
+
+```sh
+curl -sS -c /tmp/go-home-template.cookies \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"your-password"}' \
+  http://localhost:8080/api/auth/login
+
+curl -sS -b /tmp/go-home-template.cookies \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"mcp"}' \
+  http://localhost:8080/api/tokens
+```
+
+The second response shows the plaintext `token` exactly once. Copy it into the
+MCP config, then remove the cookie jar:
+
+```sh
+mkdir -p "$HOME/.config"
+cat > "$HOME/.config/go-home-template.json" <<'JSON'
+{
+  "appUrl": "http://localhost:8080",
+  "token": "pat_..."
+}
+JSON
+chmod 600 "$HOME/.config/go-home-template.json"
+rm /tmp/go-home-template.cookies
+```
+
+`appUrl` is optional and defaults to `http://localhost:8080`. The real
+`MCP_APP_URL` and `MCP_APP_TOKEN` environment variables take precedence over
+this file; the file takes precedence over a local `.env`. The config path is
+`$XDG_CONFIG_HOME/go-home-template.json` when `XDG_CONFIG_HOME` is set, and
+`~/.config/go-home-template.json` otherwise.
+
+With the app running and the token valid, the shell mode proves the harness is
+live:
+
+```sh
+go-home-template-mcp list
+# (no tools registered)
+```
+
+No arguments (or `serve`) starts the stdio MCP transport for a desktop client.
+Configure that client with the binary's absolute path because `~` is not
+expanded when a client executes a command. `list` and `call` verify the token
+with `GET /api/auth/me`, so a missing, garbage, or revoked token fails clearly.
+Stdio startup loads the config but waits for a tool call before contacting the
+app. Missing config is static and cannot repair itself, so it still stops
+startup. App availability and token validity are transient, and each tool's own
+HTTP call reports either failure without extra lazy-validation machinery.
+Desktop clients often start before the app and may not retry a process that
+exits, so this keeps a temporary outage from disabling the integration until
+the client restarts.
+
+### Adding a tool
+
+Keep MCP handlers thin: call the app's HTTP API so auth, validation, and domain
+logic stay in one place. For example, add the foundation `auth` package to
+`cmd/mcp/main.go`'s imports, then replace the empty `registerTools` function
+with:
+
+```go
+func registerTools(srv *foundationmcp.Server, client *apiclient.Client) {
+	foundationmcp.AddTool(
+		srv,
+		"current_user",
+		"Get the authenticated app user.",
+		func(ctx context.Context, _ struct{}) (auth.User, error) {
+			var user auth.User
+			err := client.Do(ctx, http.MethodGet, currentUserPath, nil, &user)
+			return user, err
+		},
+	)
+}
+```
+
+The input and output are structs, so the harness can infer their JSON schemas.
+For an app-specific tool, add the API route in `internal/app` first, regenerate
+the contract with `make spec`, then call that route from the tool.
 
 ## Auth and the two screens
 
