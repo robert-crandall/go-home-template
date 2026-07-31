@@ -594,12 +594,19 @@ go-build    --platform=$BUILDPLATFORM  golang:1.26          CGO_ENABLED=0 GOOS=$
 runtime                                gcr.io/distroless/static-debian12:nonroot
 ```
 
-Both build stages are pinned to `$BUILDPLATFORM` so neither ever runs under QEMU;
-the Go stage cross-compiles to `$TARGETARCH`. A multi-arch (amd64 + arm64) build
-is then two native compiles rather than one native compile plus one emulated
-one. Go cross-compiles for free, and there's no reason to pay the emulation tax.
-`$TARGETOS` is declared alongside `$TARGETARCH` rather than hardcoding `linux`,
-so the `ARG`s and the build command can't drift apart.
+The published image is `linux/amd64` only. That's what the homelab runs, and a
+second architecture is a second compile and a second set of layers on every CI
+run and every publish, for nobody - and `docker-build` is already the slowest job
+in the graph by a wide margin (2m50s of a 2m54s cold run).
+
+Both build stages are still pinned to `$BUILDPLATFORM` even so, and that pinning
+isn't vestigial: it's what lets an arm64 dev machine build the amd64 image
+without QEMU. Measured on an Apple Silicon Mac running
+`buildx build --platform linux/amd64`, the Go compile step takes 3.6s pinned and
+19.4s unpinned - 9.3s against 50s end to end. Go cross-compiles for free, so
+there's no reason to pay the emulation tax on the one path that would otherwise
+pay it. `$TARGETOS` is declared alongside `$TARGETARCH` rather than hardcoding
+`linux`, so the `ARG`s and the build command can't drift apart.
 
 `CGO_ENABLED=0` matters twice: it's what makes `distroless/static` viable, and
 it's consistent with the foundation's decision not to support HEIC/AVIF
@@ -659,7 +666,7 @@ written:
 | `go` | `web` | download artifact, then `go build ./... && go vet ./... && go test ./...` |
 | `spec` | - | `make spec` (`go run ./cmd/openapi`, then `bun run gen:api`), fail on diff |
 | `e2e` | `web` | download artifact, `bun run e2e:install`, `make e2e` (builds the real binary, runs it against Postgres, runs Playwright), plus `TestAuthRefusalStrings` against the always-present `postgres` database on the same service, so it can't race the browser suite's schema reset |
-| `docker-build` | - | `docker buildx build` for amd64 + arm64, cache output only. PRs stop here |
+| `docker-build` | - | `docker buildx build` for `linux/amd64`, cache output only. PRs stop here |
 
 Publish is deliberately *not* in this graph; it's a separate workflow, below.
 
@@ -695,9 +702,14 @@ absent, so on a Node-free runner the assertion would pass whatever `bunfig.toml`
 said. Printing the path keeps the evidence honest about what was proved.
 
 `docker-build` builds to cache and asserts only that the Dockerfile still works.
-It can't `--load` its result into the local daemon, because a multi-platform
-`buildx` result isn't loadable - so there's nothing to hand downstream even if
-publishing lived here.
+It produces no image on purpose: nothing downstream in this graph consumes one,
+and `make docker-smoke` is where an image actually gets exercised. What the job
+earns its place with is the gha cache, which `publish` then reuses. That is also
+the only reason it runs `docker/setup-buildx-action`: the runner's default
+builder uses the `docker` driver, which refuses cache export outright - measured
+on `ubuntu-latest` (Docker 28.0.4, buildx v0.35.0), a build without the setup
+step dies with `Cache export is not supported for the docker driver`. It is not,
+as it once was, about exporting a manifest list.
 
 The E2E spec is one flow, and deliberately one `test()` rather than a
 `describe.serial` of several: Playwright gives every test its own browser
@@ -795,14 +807,20 @@ a `promote` job re-reads the branch tip afterwards and only then moves `:main`
 with `docker buildx imagetools create` - a registry-side manifest copy of an
 image that already exists, so no rebuild and no local daemon.
 
-That last part is measured, not assumed. A probe pushed a two-platform image,
-then ran `imagetools create` on a *separate* runner with no
-`docker/setup-buildx-action` and no builder set up: it logged `copying sha256:…`
-then `pushing`, finished in 1.7s, and produced an index carrying both
-`linux/amd64` and `linux/arm64`. The source and promoted manifests hash
-identically, so it really is the same manifest rather than a rebuild - which is
-also why `promote` doesn't need a buildx builder, only the CLI plugin the runner
-image already ships. `promote` carries
+That last part is measured, not assumed. A probe ran `imagetools create` on a
+*separate* runner with no `docker/setup-buildx-action` and no builder set up: it
+logged `copying sha256:…` then `pushing`, and finished in 1.7s - a copy rather
+than a rebuild, which is also why `promote` needs only the CLI plugin the runner
+image already ships, not a builder.
+
+Dropping arm64 was rechecked against a local registry rather than assumed:
+`imagetools create` copied the pushed image through without changing its digest,
+because buildx emits a provenance attestation and so even a one-platform push is
+already an index. Nothing rests on that - if the default ever changed,
+`--prefer-index` would rewrap it, the digests would stop matching, and `:main`
+would still point at the right image.
+
+`promote` carries
 a job-level `concurrency` group of its own (`cancel-in-progress: false`). That
 is not the workflow-wide concurrency this ADR rejects above; it is narrower, and
 it's worth being precise about what it buys:

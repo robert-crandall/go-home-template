@@ -1,10 +1,11 @@
 # The image the homelab pulls: one binary, no shell, no package manager.
 #
-# Three stages, per D8 in docs/tech-stack.md. Both build stages are pinned to
-# $BUILDPLATFORM and the runtime stage has no RUN, so `buildx build --platform
-# linux/amd64,linux/arm64` needs no QEMU - Go cross-compiles and nothing ever
-# executes a target-arch binary at build time. Add a RUN to the runtime stage
-# and that stops being true.
+# Three stages, per D8 in docs/tech-stack.md. The published image is linux/amd64
+# only, but both build stages are still pinned to $BUILDPLATFORM and the runtime
+# stage still has no RUN - which is what lets an arm64 dev machine cross-build
+# the amd64 image with no QEMU: Go cross-compiles, and nothing ever executes a
+# target-arch binary at build time. D8 has the numbers. Add a RUN to the runtime
+# stage and that stops being true.
 
 # --- 1. the SPA -------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM oven/bun:1.3-alpine AS web-build
