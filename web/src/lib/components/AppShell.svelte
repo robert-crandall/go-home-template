@@ -36,6 +36,24 @@
   // you are already on may not navigate at all, and close on `afterNavigate`,
   // which catches Back and Forward.
   afterNavigate(() => drawer?.close());
+
+  // Rotating an iPad from portrait to landscape crosses 768 -> 1024 with the
+  // drawer open, which is the one way both navs can be on screen at once. The
+  // sidebar that appears carries the same links, so the drawer is redundant the
+  // moment it does. Closing is not the same as hiding it: focus goes back where
+  // it came from and the top layer clears, where `lg:hidden` would leave an
+  // invisible thing holding both.
+  //
+  // 1024px is Tailwind's `lg`, which is where the sidebar's `lg:flex` starts.
+  $effect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const closeDrawer = () => {
+      if (desktop.matches) drawer?.close();
+    };
+
+    desktop.addEventListener('change', closeDrawer);
+    return () => desktop.removeEventListener('change', closeDrawer);
+  });
 </script>
 
 {#snippet navList(idPrefix: string)}
@@ -103,8 +121,10 @@
   go, and splitting it would mean four files that only ever appear together.
 
   Both navs carry `aria-label="Primary"`, which would be a duplicate landmark
-  name if they were ever exposed at once. They can't be: the sidebar is
-  `display: none` below `lg`, and the drawer renders nothing until it opens.
+  name if they were ever exposed at once. They aren't: the sidebar is
+  `display: none` below `lg`, the drawer renders nothing until it opens, and
+  crossing up to `lg` with the drawer open closes it - see the `matchMedia`
+  effect above.
 -->
 <div class="flex min-h-screen">
   <!--
@@ -150,10 +170,10 @@
 </div>
 
 <!--
-  No `lg:hidden` here on purpose. Hiding an *open* modal - which is what
-  rotating a tablet past the breakpoint would do - leaves an invisible thing
-  holding focus. Left visible it's a drawer you can see and dismiss, and it is
-  only ever opened from a button that `lg:hidden` has already taken away.
+  No `lg:hidden` here on purpose. Hiding an *open* modal leaves an invisible
+  thing holding focus and the top layer. The breakpoint case that would need it
+  - rotating a tablet past `lg` - is handled by closing the drawer instead,
+  which is the same thing done properly.
 -->
 <dialog
   bind:this={drawer}

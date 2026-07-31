@@ -563,10 +563,13 @@ equivalent is roughly sixty lines of listener plumbing and is where this kind of
 component usually goes wrong. Two things it doesn't do: it doesn't close on
 client-side navigation, so the shell closes it in `afterNavigate` **and** on
 link click (tapping the link for the page you're already on may not navigate at
-all); and it isn't hidden at `lg`, on purpose - hiding an *open* modal, which is
-what rotating a tablet past the breakpoint would do, leaves an invisible thing
-holding focus. Left visible it's a drawer you can see and dismiss, and the only
-way to open it is a button `lg:hidden` has already taken away.
+all); and it doesn't know about the breakpoint. Rotating an iPad from portrait
+to landscape crosses 768 to 1024 with the drawer open, which is the one way the
+sidebar and the drawer can be on screen together - a modal offering the same
+links as the sidebar underneath it, and two landmarks both named "Primary". A
+`matchMedia` listener closes the drawer when that happens. Closing rather than
+`lg:hidden`, because hiding an *open* modal leaves an invisible thing holding
+focus and the top layer; closing hands focus back and clears it.
 
 `showModal()` is Safari 15.4+ (March 2022), which is the floor this shell
 assumes. Below it the drawer would render inline instead of as a modal - it is

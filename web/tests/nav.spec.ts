@@ -246,3 +246,25 @@ test('a failed sign-out stacks under the button rather than beside the theme pic
   expect(failure).not.toBeNull();
   expect(failure!.y).toBeGreaterThanOrEqual(picker!.y + picker!.height);
 });
+
+test('rotating past the breakpoint with the drawer open leaves one primary nav', async ({
+  page
+}) => {
+  // An iPad crossing 768 -> 1024 in portrait-to-landscape is the one way the
+  // sidebar and the drawer can be on screen together, and they share
+  // `aria-label="Primary"` - two identically named landmarks, plus a modal
+  // sitting on top of a sidebar offering the same links. The drawer closes
+  // rather than hiding, so focus and the top layer come back too.
+  await signIn(page);
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.goto('/');
+
+  await menuButton(page).click();
+  await expect(openDialogs(page)).toHaveCount(1);
+
+  await page.setViewportSize({ width: 1024, height: 768 });
+
+  await expect(openDialogs(page)).toHaveCount(0);
+  await expect(primaryNav(page)).toHaveCount(1);
+  await expect(destination(page, navItems[0].label)).toBeVisible();
+});
