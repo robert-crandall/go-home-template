@@ -11,9 +11,12 @@
 <!--
   No positioning here on purpose: the shell puts this in its chrome, and
   /login - which has no chrome - pins it to the corner itself.
+
+  `w-auto` because daisyUI's `.select` is full-width by default, which in a flex
+  row means it takes the space and the app name next to it truncates.
 -->
 <select
-  class="select select-sm"
+  class="select select-sm w-auto"
   aria-label="Theme"
   bind:value={() => themePreference.value, (next) => themePreference.set(next)}
 >

@@ -22,12 +22,11 @@
 -->
 <div class="flex min-h-screen">
   <div class="hidden w-60 shrink-0 flex-col border-r border-base-300 lg:flex">
-    <div class="flex items-center justify-between gap-3 border-b border-base-300 px-5 py-4">
-      <span class="truncate text-lg font-bold tracking-tight">{appName}</span>
-      <ThemePicker />
+    <div class="border-b border-base-300 px-5 py-4">
+      <span class="block truncate text-lg font-bold tracking-tight">{appName}</span>
     </div>
 
-    <nav class="flex flex-col gap-1 p-3" aria-label="Primary">
+    <nav class="flex flex-1 flex-col gap-1 p-3" aria-label="Primary">
       {#each navItems as item (item.href)}
         {@const current = isCurrent(item, page.url.pathname)}
         <a
@@ -41,6 +40,15 @@
         </a>
       {/each}
     </nav>
+
+    <!--
+      The picker sits at the foot of the column rather than beside the app name:
+      a 240px sidebar can't hold a long app name and a select on one row, and
+      the thing that would give way is the name.
+    -->
+    <div class="border-t border-base-300 px-3 py-3">
+      <ThemePicker />
+    </div>
   </div>
 
   <div class="flex min-w-0 flex-1 flex-col">

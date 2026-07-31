@@ -848,13 +848,15 @@ both widths. That is deliberate beyond tidiness: the README tells you to delete
 `/second`, and a spec that had `/second` written in it would make following the
 README a red build.
 
-**Don't use `page.request` in this suite.** It needs a session and the obvious
-way to get one is Playwright's API request context, which shares the browser's
-cookie jar. Under Bun - which is the runtime the suite runs on, per D4 - that
-throws `TypeError: "/api/auth/login" cannot be parsed as a URL` on any response
-carrying a `Set-Cookie`, which is every response worth making. Cookieless
-responses are fine, and the same calls pass under Node, so it presents as a bug
-in your own test file. `nav.spec.ts` signs in with the browser's own `fetch`
+**`page.request` can't do the signing in.** The spec needs a session and the
+obvious way to get one is Playwright's API request context, which shares the
+browser's cookie jar. Under Bun - which is the runtime the suite runs on, per
+D4 - that throws `TypeError: "/api/auth/login" cannot be parsed as a URL` on any
+response carrying a `Set-Cookie`, which is exactly the responses a login makes.
+Cookieless requests are unaffected, which is why `theme.spec.ts` still fetches
+the manifest and its icons through `page.request` quite happily, and why this
+took a while to pin down: it presents as a bug in your own test file. The same
+calls pass under Node. `nav.spec.ts` signs in with the browser's own `fetch`
 through `page.evaluate` instead, which is both immune to this and closer to what
 the app does.
 

@@ -43,12 +43,13 @@ const destination = (page: Page, label: string) =>
  * origin, rather than through Playwright's `page.request`. That is not a style
  * choice: this suite runs under Bun (see `web/bunfig.toml`), and under Bun
  * `page.request` throws `TypeError: "/api/auth/login" cannot be parsed as a
- * URL` on any response carrying a `Set-Cookie` - which is every response worth
- * making here. Cookieless responses are fine, and the same calls pass under
- * Node, so the failure reads like a bug in this file rather than a runtime
- * mismatch. Going through the page also puts the cookie where it needs to be
- * anyway: `auth.ensure()` reads it back from `GET /api/auth/me` on the next
- * navigation, so no form-filling is needed to get a session.
+ * URL` on any response carrying a `Set-Cookie` - which is exactly what a login
+ * returns. Cookieless requests are unaffected, which is why `theme.spec.ts` can
+ * still fetch the manifest through `page.request`, and the same calls pass
+ * under Node, so the failure reads like a bug in this file rather than a
+ * runtime mismatch. Going through the page also puts the cookie where it needs
+ * to be anyway: `auth.ensure()` reads it back from `GET /api/auth/me` on the
+ * next navigation, so no form-filling is needed to get a session.
  */
 async function signIn(page: Page) {
   await page.goto('/login');
@@ -85,6 +86,9 @@ async function onlyCurrent(page: Page, href: string) {
  * clicked here the moment it exists, at both widths.
  */
 async function visitEveryDestination(page: Page) {
+  expect(navItems, 'the shell has no destinations, so this test proves nothing').not.toHaveLength(
+    0
+  );
   await expect(primaryNav(page), 'exactly one primary nav should be exposed').toHaveCount(1);
 
   for (const item of navItems) {

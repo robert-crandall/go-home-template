@@ -9,9 +9,9 @@ const DB = process.env.E2E_DATABASE_NAME ?? 'go-home-template_e2e';
 
 export default defineConfig({
   testDir: 'tests',
-  // The suite drives one login session through one browser context. Running it
-  // in parallel against a shared database would have workers registering the
-  // first user out from under each other.
+  // Every spec shares one account and one database, and registration is
+  // first-user-only, so parallel workers would be racing to register the first
+  // user out from under each other.
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: 0,
@@ -28,6 +28,11 @@ export default defineConfig({
     // closed" a long way from the cause. A dependency says it out loud, and
     // means the other specs can simply log in.
     { name: 'account', testMatch: /auth\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
+    // `chromium` is the catch-all rather than a second `testMatch`, so a spec
+    // added later lands in it by default. That means `theme.spec.ts` is ordered
+    // after `auth.spec.ts` despite never needing an account - the cost is that
+    // a broken auth run hides a theme regression until the next run, which is
+    // cheaper than a new spec silently belonging to no project at all.
     {
       name: 'chromium',
       testIgnore: /auth\.spec\.ts/,
