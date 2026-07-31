@@ -4,36 +4,41 @@ import { navItems } from '../src/lib/nav';
 /**
  * The navigation shell, against the real binary.
  *
- * One sequential test, like the rest of the suite: the desktop steps, the phone
- * steps, and the deep link all run in one browser context because they all need
- * the same session, and Playwright gives every `test` a fresh one.
+ * Everything here is driven off `navItems`, so this file has no opinion about
+ * what the destinations are: delete `/second`, add `/notes`, reorder them - the
+ * suite follows. That matters more than usual because the README tells you to
+ * delete `/second`, and a test that named it would turn following the README
+ * into a red build.
  *
  * The nav is looked up as `getByRole('navigation', { name: 'Primary' })`, which
- * is the whole point of the assertion rather than a convenience. Both the
- * sidebar and the bottom bar are in the DOM at every width and both carry that
- * name; whichever one is `display: none` is out of the accessibility tree, so a
- * lookup that resolves to exactly one element is direct evidence that a screen
- * reader is offered one primary nav and not two. Which one it resolved to is
- * then measured geometrically - a column down the left, or a strip across the
- * bottom - rather than by sniffing for the classes that put it there.
- *
- * The destination list comes from `$lib/nav`, so adding an entry there extends
- * this test rather than leaving it behind.
+ * is the assertion rather than a convenience. Both the sidebar and the bottom
+ * bar are in the DOM at every width and both carry that name; whichever one is
+ * `display: none` is out of the accessibility tree, so a lookup that resolves
+ * to exactly one element is direct evidence that a screen reader is offered one
+ * primary nav and not two. Which one it resolved to is then measured
+ * geometrically - a column down the left, or a strip across the bottom - rather
+ * than by sniffing for the classes that put it there.
  */
 
-// The same account `auth.spec.ts` registers. Registration is first-user-only in
-// the E2E environment, so exactly one of the two files creates it and the other
-// logs in - see `signIn` below, which handles both without caring which ran.
+// The account `auth.spec.ts` registers. Registration is first-user-only in the
+// E2E environment, so nothing here creates it: the `account` project in
+// playwright.config.ts runs that spec first and this one just logs in.
 const EMAIL = 'first@example.com';
 const PASSWORD = 'correct-horse-battery';
+
+const DESKTOP = { width: 1280, height: 720 };
+const PHONE = { width: 390, height: 844 };
+
+// The first destination the shell can navigate away from and back to. `/` is a
+// prefix of everything, so `isCurrent` special-cases it, which makes any other
+// entry the interesting one for both history and deep links.
+const elsewhere = navItems.find((item) => item.href !== '/');
 
 const primaryNav = (page: Page) => page.getByRole('navigation', { name: 'Primary' });
 const destination = (page: Page, label: string) =>
   primaryNav(page).getByRole('link', { name: label, exact: true });
 
 /**
- * A session, without depending on which spec file ran first.
- *
  * The requests go through the browser's own `fetch`, from a page already on the
  * origin, rather than through Playwright's `page.request`. That is not a style
  * choice: this suite runs under Bun (see `web/bunfig.toml`), and under Bun
@@ -44,118 +49,114 @@ const destination = (page: Page, label: string) =>
  * mismatch. Going through the page also puts the cookie where it needs to be
  * anyway: `auth.ensure()` reads it back from `GET /api/auth/me` on the next
  * navigation, so no form-filling is needed to get a session.
- *
- * The fallback branches on a specific status rather than on "not ok": a 401 is
- * the server saying there is no such account yet, which is the one case
- * registration fixes. Anything else is a broken server, and failing here says
- * so instead of leaving a confusing "still on /login" three steps later.
  */
 async function signIn(page: Page) {
   await page.goto('/login');
 
-  const post = (path: string) =>
-    page.evaluate(
-      ({ path, body }) =>
-        fetch(path, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body
-        }).then((res) => res.status),
-      { path, body: JSON.stringify({ email: EMAIL, password: PASSWORD }) }
-    );
+  const status = await page.evaluate(
+    (body) =>
+      fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body
+      }).then((res) => res.status),
+    JSON.stringify({ email: EMAIL, password: PASSWORD })
+  );
 
-  const login = await post('/api/auth/login');
-  if (login === 200) return;
-
-  expect(login, 'login failed for a reason other than "no such account yet"').toBe(401);
-  expect(await post('/api/auth/register'), 'registering the test account failed').toBe(200);
+  expect(status, 'could not log in as the account auth.spec.ts registers').toBe(200);
 }
 
-async function navBox(page: Page) {
-  const box = await primaryNav(page).boundingBox();
-  expect(box, 'the primary nav has no box, so it is not laid out').not.toBeNull();
-  return box!;
+/** Every destination marked as current except the one that should be. */
+async function onlyCurrent(page: Page, href: string) {
+  for (const item of navItems) {
+    const link = destination(page, item.label);
+    if (item.href === href) {
+      await expect(link).toHaveAttribute('aria-current', 'page');
+    } else {
+      await expect(link).not.toHaveAttribute('aria-current', 'page');
+    }
+  }
 }
 
-test('the shell navigates at both widths, and a deep link lands with the right destination marked', async ({
+/**
+ * Click through every destination in whichever nav is showing, and check the
+ * marker lands on it and nowhere else. This is what makes "adding a destination
+ * is one line" true rather than aspirational - a new entry in `navItems` is
+ * clicked here the moment it exists, at both widths.
+ */
+async function visitEveryDestination(page: Page) {
+  await expect(primaryNav(page), 'exactly one primary nav should be exposed').toHaveCount(1);
+
+  for (const item of navItems) {
+    await destination(page, item.label).click();
+    await expect(page).toHaveURL(item.href);
+    await onlyCurrent(page, item.href);
+  }
+}
+
+test('the shell puts one primary nav on screen, and every destination is reachable in it', async ({
   page
 }) => {
   await signIn(page);
 
-  const desktop = page.viewportSize()!;
-  const phone = { width: 390, height: 844 };
-
-  await test.step('on desktop the visible chrome is a sidebar, with every destination in it', async () => {
+  await test.step('on desktop the nav is a column down the left', async () => {
+    await page.setViewportSize(DESKTOP);
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Hello' })).toBeVisible();
 
-    await expect(primaryNav(page), 'exactly one primary nav should be exposed').toHaveCount(1);
-
-    const box = await navBox(page);
-    expect(box.x + box.width, 'the desktop nav should be a column down the left').toBeLessThan(
-      desktop.width / 2
+    const box = await primaryNav(page).boundingBox();
+    expect(box, 'the primary nav is not laid out').not.toBeNull();
+    expect(box!.x + box!.width, 'the desktop nav should be a column down the left').toBeLessThan(
+      DESKTOP.width / 2
     );
 
-    for (const item of navItems) {
-      await expect(destination(page, item.label)).toBeVisible();
-    }
+    await visitEveryDestination(page);
   });
 
-  await test.step('the current destination is marked, and clicking another moves the mark', async () => {
-    await expect(destination(page, 'Home')).toHaveAttribute('aria-current', 'page');
-    await expect(destination(page, 'Second page')).not.toHaveAttribute('aria-current', 'page');
+  await test.step('on a phone it is a bar across the bottom, with the same destinations', async () => {
+    await page.setViewportSize(PHONE);
+    await page.goto('/');
 
-    await destination(page, 'Second page').click();
-    await expect(page).toHaveURL(/\/second$/);
-    await expect(page.getByRole('heading', { name: 'Second page' })).toBeVisible();
-    await expect(destination(page, 'Second page')).toHaveAttribute('aria-current', 'page');
-    await expect(destination(page, 'Home')).not.toHaveAttribute('aria-current', 'page');
+    const box = await primaryNav(page).boundingBox();
+    expect(box, 'the primary nav is not laid out').not.toBeNull();
+    expect(box!.width, 'the phone nav should span the width').toBeGreaterThanOrEqual(
+      PHONE.width - 1
+    );
+    expect(box!.y + box!.height, 'the phone nav should sit at the bottom').toBeGreaterThan(
+      PHONE.height - 2
+    );
+
+    await visitEveryDestination(page);
   });
+});
 
-  await test.step('Back returns the mark along with the page', async () => {
+test('history and deep links keep the marker honest', async ({ page }) => {
+  test.skip(
+    elsewhere === undefined,
+    'the shell has one destination, so there is no second one to navigate to or link at'
+  );
+  const target = elsewhere!;
+
+  await signIn(page);
+  await page.setViewportSize(DESKTOP);
+
+  await test.step('Back returns the marker along with the page', async () => {
+    await page.goto('/');
+    await destination(page, target.label).click();
+    await expect(page).toHaveURL(target.href);
+
     await page.goBack();
-    await expect(page).toHaveURL(/\/$/);
-    await expect(page.getByRole('heading', { name: 'Hello' })).toBeVisible();
-    await expect(destination(page, 'Home')).toHaveAttribute('aria-current', 'page');
+    await expect(page).toHaveURL('/');
+    await onlyCurrent(page, '/');
   });
 
-  await test.step('on a phone the chrome is a bottom bar, and nothing is desktop-only', async () => {
-    await page.setViewportSize(phone);
+  await test.step('a deep link with a trailing slash lands marked', async () => {
+    // The trailing slash is the point: the request reaches the Go binary, which
+    // has no file for it and serves index.html, and SvelteKit normalises the
+    // pathname before anything renders. `isCurrent` leans on that normalisation
+    // rather than doing its own, so this is what keeps the lean honest.
+    await page.goto(`${target.href}/`);
 
-    await expect(primaryNav(page), 'exactly one primary nav should be exposed').toHaveCount(1);
-
-    const box = await navBox(page);
-    expect(box.width, 'the phone nav should span the width').toBeGreaterThanOrEqual(
-      phone.width - 1
-    );
-    expect(box.y + box.height, 'the phone nav should sit at the bottom').toBeGreaterThan(
-      phone.height - 2
-    );
-
-    for (const item of navItems) {
-      await expect(destination(page, item.label)).toBeVisible();
-    }
-    await expect(destination(page, 'Home')).toHaveAttribute('aria-current', 'page');
-  });
-
-  await test.step('tapping a destination in the bottom bar navigates', async () => {
-    await destination(page, 'Second page').click();
-    await expect(page).toHaveURL(/\/second$/);
-    await expect(page.getByRole('heading', { name: 'Second page' })).toBeVisible();
-    await expect(destination(page, 'Second page')).toHaveAttribute('aria-current', 'page');
-  });
-
-  await test.step('a deep link with a trailing slash loads its page, marked', async () => {
-    // The trailing slash is the point: this request reaches the Go binary,
-    // which has no file for it and serves index.html, and SvelteKit normalises
-    // the pathname to `/second` before anything renders. `isCurrent` leans on
-    // that normalisation rather than doing its own, so this is what keeps the
-    // lean honest.
-    await page.setViewportSize(desktop);
-    await page.goto('/second/');
-
-    await expect(page.getByRole('heading', { name: 'Second page' })).toBeVisible();
-    await expect(destination(page, 'Second page')).toHaveAttribute('aria-current', 'page');
-    await expect(destination(page, 'Home')).not.toHaveAttribute('aria-current', 'page');
+    await expect(primaryNav(page)).toHaveCount(1);
+    await onlyCurrent(page, target.href);
   });
 });

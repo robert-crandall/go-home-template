@@ -830,6 +830,34 @@ M3 added a second spec rather than more steps to that one, because theming
 shares no state with the auth flow and a `theme.spec.ts` that never signs in
 can't perturb it. Its interesting step is the no-flash proof described in D5.
 
+M7 added `nav.spec.ts`, which does need a session, and that is where the shared
+first account stops being free. Registration is first-user-only in the E2E
+environment, so exactly one spec can register and `auth.spec.ts` asserts that it
+is the one that does. Playwright sorts spec files, so "auth runs first" was true
+by alphabet - which would have held until someone renamed a file, and then
+failed as `registration is closed` a long way from the cause. So the config
+splits that into two projects: `account`, which is just `auth.spec.ts`, and
+`chromium`, which is everything else and `dependencies: ['account']`. The order
+is now stated rather than inferred, running a single spec still gets an account
+because dependencies run too, and `nav.spec.ts` logs in without any
+"register if nobody has" fallback to get wrong.
+
+`nav.spec.ts` imports `navItems` from `$lib/nav` rather than naming
+destinations, so it clicks through whatever the shell is configured with, at
+both widths. That is deliberate beyond tidiness: the README tells you to delete
+`/second`, and a spec that had `/second` written in it would make following the
+README a red build.
+
+**Don't use `page.request` in this suite.** It needs a session and the obvious
+way to get one is Playwright's API request context, which shares the browser's
+cookie jar. Under Bun - which is the runtime the suite runs on, per D4 - that
+throws `TypeError: "/api/auth/login" cannot be parsed as a URL` on any response
+carrying a `Set-Cookie`, which is every response worth making. Cookieless
+responses are fine, and the same calls pass under Node, so it presents as a bug
+in your own test file. `nav.spec.ts` signs in with the browser's own `fetch`
+through `page.evaluate` instead, which is both immune to this and closer to what
+the app does.
+
 Exactly one step is mocked, because a healthy server cannot produce what it
 checks: logout returning 500, and logout failing at the network layer. Both
 matter because the foundation refuses to clear the session cookie when it

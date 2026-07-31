@@ -20,7 +20,21 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'retain-on-failure'
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    // auth.spec.ts registers the first account, and the E2E server runs with
+    // registration closed, so it has to be the spec that gets there first.
+    // Left to one project that would be alphabetical luck - rename a file and
+    // another spec registers instead, and auth.spec fails with "registration is
+    // closed" a long way from the cause. A dependency says it out loud, and
+    // means the other specs can simply log in.
+    { name: 'account', testMatch: /auth\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      testIgnore: /auth\.spec\.ts/,
+      dependencies: ['account'],
+      use: { ...devices['Desktop Chrome'] }
+    }
+  ],
   webServer: {
     // Relative to this config's directory (web/), which is why the script cds
     // to the repo root before doing anything.
