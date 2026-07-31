@@ -33,7 +33,8 @@ build: ## Build the frontend, then the binary into bin/
 	go build -o bin/$(APP_SLUG) ./cmd/server
 
 install-mcp: ## Build and install the MCP server into ~/bin
-	@module="$$(go list -m -f '{{.Path}}')"; \
+	@set -e; \
+	module="$$(go list -m -f '{{.Path}}')"; \
 	name="$$(printf '%s\n' "$$module" | sed -E 's#/v([2-9]|[1-9][0-9]+)$$##; s#^.*/##')"; \
 	path="$(HOME)/bin/$$name-mcp"; \
 	mkdir -p "$(HOME)/bin"; \
