@@ -183,11 +183,12 @@ The input and output are structs, so the harness can infer their JSON schemas.
 For an app-specific tool, add the API route in `internal/app` first, regenerate
 the contract with `make spec`, then call that route from the tool.
 
-## Auth and the two screens
+## Auth and the screens
 
 The template ships the smallest thing that proves auth works end to end:
 `/login` (log in / register) and a guarded `/` that greets you and offers a
-logout button. That's it - the rest is yours.
+logout button, inside a navigation shell with one demo destination in it. That's
+it - the rest is yours.
 
 Three pieces make it work, and they're all small enough to read in a sitting:
 
@@ -199,10 +200,11 @@ Three pieces make it work, and they're all small enough to read in a sitting:
 - **`web/src/lib/auth.svelte.ts`** - a `$state` user and a cached boot promise.
   `ensure()` resolves once, from `GET /api/auth/me`; `signedIn()` and
   `signOut()` update it directly so a login doesn't cost a second round trip.
-- **The guards live in `+page.ts`, not the component.** SvelteKit doesn't render
-  a page until its `load` resolves, so a signed-out visitor gets a redirect
-  instead of a flash of the greeting. `/login` guards the other way and bounces
-  anyone already signed in.
+- **The guard lives in a `load`, not a component** - `web/src/routes/(app)/+layout.ts`,
+  which covers every page in the shell. SvelteKit doesn't render a page until
+  its `load` resolves, so a signed-out visitor gets a redirect instead of a
+  flash of the greeting. `/login` guards the other way, in its own `+page.ts`,
+  and bounces anyone already signed in.
 
 Errors are the server's words: `apiErrorMessage` reads huma's `errors[]` when
 they're there and its `detail` otherwise, so there's no status-code-to-message
@@ -214,13 +216,44 @@ Registration is gated by `ALLOW_OPEN_REGISTRATION`. It defaults to `false`,
 which means "the first account only" - fine for a single-user app, which is what
 this template is shaped for. Set it to `true` if you want anyone to sign up.
 
+## Adding a page
+
+Every signed-in page lives under `web/src/routes/(app)/`, which is the route
+group the navigation shell and the auth guard wrap. Adding a destination is two
+things:
+
+1. A `+page.svelte` under `web/src/routes/(app)/` - say `notes/+page.svelte`.
+2. One entry in `navItems` in `web/src/lib/nav.ts`:
+
+```ts
+export const navItems: NavItem[] = [
+  { href: '/', label: 'Home', icon: '●' },
+  { href: '/notes', label: 'Notes', icon: '☰' }
+];
+```
+
+That's the whole thing. The desktop sidebar and the phone bottom bar both read
+that array, so there's no second list to update, and `web/tests/nav.spec.ts`
+reads it too - it asserts every entry is reachable at both widths, so a new
+destination is covered the moment you add it. The current destination is marked
+by prefix, so `/notes/123` still highlights **Notes**.
+
+`/second` is a demo destination that exists so the shell has somewhere to
+navigate to. Delete `web/src/routes/(app)/second/` and its line in `navItems`
+when you have a real second page.
+
+The bottom bar divides the width evenly among however many destinations there
+are, with no overflow menu - past about six the labels start truncating. If you
+need more than that, you need different navigation than this shell.
+
 ## Theming and install metadata
 
-A System / Light / Dark picker sits in the layout, so it's on both screens and
-works signed out. The choice lands in `localStorage` and a synchronous inline
-script in `web/src/app.html` applies it before the app boots - so a reload, a
-browser restart, or a deep link all paint the right palette on the first frame,
-never the wrong one first.
+A System / Light / Dark picker sits in the navigation shell - in the sidebar on
+desktop, in the header on a phone - and `/login` places its own copy, so it
+works signed out too. The choice lands in `localStorage` and a synchronous
+inline script in `web/src/app.html` applies it before the app boots - so a
+reload, a browser restart, or a deep link all paint the right palette on the
+first frame, never the wrong one first.
 
 The bit worth knowing if you edit it: `data-theme` is only set for an explicit
 light or dark choice. daisyUI scopes its dark rule to `:root:not([data-theme])`,
@@ -228,9 +261,10 @@ so **System** means no attribute and lets CSS decide, which is both flash-proof
 by construction and keeps following the OS live. Adding a fourth theme means
 four edits, and the fourth is easy to miss: the `themes:` list in
 `web/src/app.css`, the `Theme` union and the values `read()` accepts in
-`web/src/lib/theme.svelte.ts`, the `options` array in `+layout.svelte`, **and
-the inline script's own whitelist in `web/src/app.html`** - it can't import the
-TypeScript, so it repeats the valid values by hand.
+`web/src/lib/theme.svelte.ts`, the `options` array in
+`web/src/lib/components/ThemePicker.svelte`, **and the inline script's own
+whitelist in `web/src/app.html`** - it can't import the TypeScript, so it
+repeats the valid values by hand.
 
 `web/static/` carries `manifest.webmanifest` and two PNG icons, plus a
 `theme-color` meta pair, so a home-screen shortcut gets a real icon and a

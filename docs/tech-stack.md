@@ -426,21 +426,62 @@ and keep writing Tailwind.
 `btn-primary`). A hardcoded `bg-white` is a bug, because it survives the theme
 switch and looks broken in dark mode.
 
-### D6 - What the SPA does, which is almost nothing
+**Muted text has a floor, and it is `/60`.** Secondary text wants to be quieter
+than body text, and the obvious way to do that is `text-base-content/50` or
+`/40`. Both fail WCAG AA. Measured against daisyUI 5.7.4's stock light theme,
+where `base-100` is pure white and `base-content` is `oklch(21% .006 285.885)`:
+
+| Alpha | Contrast |     | Alpha | Contrast |
+| ----- | -------- | --- | ----- | -------- |
+| `/40` | 2.53:1   |     | `/60` | 4.64:1   |
+| `/45` | 2.92:1   |     | `/65` | 5.49:1   |
+| `/50` | 3.38:1   |     | `/70` | 6.54:1   |
+| `/55` | 3.95:1   |     | `/75` | 7.83:1   |
+
+AA wants 4.5:1 for body text, so `/60` is the lightest thing that passes and
+everything below it is decoration masquerading as text. Light is the binding
+theme - dark's `base-100` is much closer to its `base-content` at the same
+alpha - and darkening the token wouldn't rescue it either: over pure white, even
+pure black at 40% tops out at 2.85:1. The number is a property of the alpha, not
+of the color you picked.
+
+Related, and easy to reach for by mistake: `text-error` is a *surface* color,
+meant to be a background with `text-error-content` on it. On `base-100` it sits
+under 3:1, so red error text fails as body text while looking obviously red and
+therefore obviously fine. The paired `alert alert-error` clears AA. That is why
+every error the app shows is an alert rather than a line of red text, and
+`web/src/app.css` carries the table so the next person doesn't have to
+rediscover it.
+
+`text-primary` has the same shape of problem in the *dark* theme - 3.4:1 on
+`base-100`, against 8.3:1 in light - which is enough for a border or an icon (a
+non-text marker needs 3:1) and short of AA for a label. So the navigation shell
+marks the current destination with weight and a primary *edge* rather than
+primary text; see D6.
+
+### D6 - What the SPA does: a shell, and almost nothing in it
 
 The entire frontend:
 
 - `/login` - email and password, with a register tab. Surfaces the foundation's
   real errors rather than a status-code-to-message table of its own, so whatever
-  the server refuses with is what the person reads.
+  the server refuses with is what the person reads. It sits *outside* the
+  navigation shell: there is nowhere to navigate to when you're signed out.
+- A navigation shell around everything else - sidebar on desktop, bottom bar on
+  a phone. Its own section below.
 - `/` - guarded. Says hello to `user.email` and has a logout button. This is the
   "hello world."
-- A theme picker in the layout, so it's on both screens and a signed-out visitor
-  can use it too. System / Light / Dark, in a `<select>` - see D5 for why the
-  control is three-way rather than a toggle.
+- `/second` - guarded, and deliberately empty. It exists so the shell has
+  somewhere to navigate *to*; see below.
+- A theme picker, so it's on every screen and a signed-out visitor can use it
+  too. System / Light / Dark, in a `<select>` - see D5 for why the control is
+  three-way rather than a toggle. It lives in the shell's sidebar and phone
+  header, and `/login` places its own copy since it has no shell.
 - A route guard that calls `GET /api/auth/me` once on boot and redirects to
   `/login` on 401. It runs in `load`, not in the component, so a signed-out
-  visitor gets a redirect and never a frame of the greeting.
+  visitor gets a redirect and never a frame of the greeting. It's on the
+  shell's group layout rather than on each page, so a new page under
+  `routes/(app)/` is guarded by existing there.
 - One correction on top of that guard, in `+layout.svelte`. SvelteKit only
   writes the history entry for navigations it pushed itself, so a `load` that
   redirected during a Back or Forward rendered the right page and left the
@@ -450,6 +491,60 @@ The entire frontend:
   disagree puts the bar back. The E2E suite asserts both the content and the
   URL across history navigation in both directions; drop that hook and both
   assertions fail.
+
+**The navigation shell.** Adding a destination is one entry in one array:
+
+```ts
+// web/src/lib/nav.ts
+export const navItems: NavItem[] = [
+  { href: '/', label: 'Home', icon: '●' },
+  { href: '/second', label: 'Second page', icon: '○' }
+];
+```
+
+Nothing else holds a copy of the route list. The desktop sidebar, the phone
+bottom bar, and `web/tests/nav.spec.ts` all read that array, so a destination
+that renders in one place renders in all of them and the test extends itself
+when you add one.
+
+The two layouts are one component (`AppShell.svelte`) with both in the DOM at
+every width, and Tailwind's `lg:` breakpoint deciding which is displayed. Both
+carry `aria-label="Primary"`, which is safe precisely because the hidden one is
+`display: none` and therefore out of the accessibility tree - the E2E suite
+asserts that a lookup for a primary nav resolves to exactly one element at each
+width, which is the claim that matters, and then measures the geometry to say
+*which* one rather than sniffing for the classes that put it there.
+
+`isCurrent` is prefix matching, not the exact match you reach for first, so
+`/notes/123` still marks a `/notes` destination; `/` is special-cased because
+it's a prefix of everything. That is not nested navigation - the shell renders
+exactly one flat level and a section's children are the section's problem.
+
+The bottom bar has **no overflow menu and no slot count.** Items are `flex-1
+min-w-0` with a truncating label, so N destinations are N equal columns and
+nothing is ever off screen or behind a "More" button. Past about six the labels
+start truncating and it gets ugly - that is the supported behaviour, not a bug
+to fix with a dropdown. A "More" menu is roughly sixty lines (outside-pointerdown
+listener, Escape handling, focus return) plus a per-destination decision about
+whether it earns a slot, which is a second thing to get right every time you add
+a page. If an app genuinely outgrows a flat bar it has outgrown this shell.
+
+The app name comes from `manifest.webmanifest`, read at build time
+(`web/src/lib/app.ts`), not from a string literal in a component. The manifest
+is already the canonical name - `make init` rewrites it along with everything
+else - and a literal in the shell would be a second place to forget.
+
+**What the shell deliberately doesn't have:** nested or collapsible navigation,
+breadcrumbs, a settings or account screen, a per-item "show this in the bottom
+bar" flag, and any notion of a page header beyond whatever `<h1>` the page
+writes itself. Each of those is a real feature some app wants and no template
+can guess at.
+
+**`/second` is a demo destination and is meant to be deleted.** A shell with one
+destination doesn't demonstrate anything - you can't see the current-page marker
+move, and the bottom bar can't show that it divides evenly. It's a heading and a
+paragraph explaining itself, so deleting it is deleting one file plus one line
+of `navItems`.
 
 **Which refusals you actually see depends on `ALLOW_OPEN_REGISTRATION`, and an
 earlier draft of this decision got that wrong.** It listed "409 when the email is
@@ -479,6 +574,11 @@ in D2. Login and hello world are the two that prove the whole stack works end to
 end: cookie auth, the generated client, the embedded SPA, deep-link fallback, and
 the styling layer. A third screen proves nothing new about the stack and costs
 every app that starts here.
+
+`/second` is the one exception, and it's an exception with a job: it is what
+makes the shell demonstrable rather than theoretical. It pays the same deletion
+tax as anything else, which is why it's kept to a heading and a paragraph that
+says so out loud.
 
 The template ships static PWA metadata (`manifest.webmanifest`, `icon-192.png`,
 `icon-512.png`, and the `theme-color` metas) because it's inert markup with no

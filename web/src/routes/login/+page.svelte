@@ -3,6 +3,7 @@
   import { api } from '$lib/api/client';
   import { apiErrorMessage } from '$lib/api/errors';
   import { auth } from '$lib/auth.svelte';
+  import ThemePicker from '$lib/components/ThemePicker.svelte';
 
   let mode = $state<'login' | 'register'>('login');
   let email = $state('');
@@ -36,6 +37,19 @@
     error = '';
   }
 </script>
+
+<!--
+  Fixed rather than in a header bar: this page is a full-height hero outside the
+  shell, so there is no chrome to hang the picker off. A signed-out visitor gets
+  to pick a theme too.
+
+  The wrapper is `fixed` with no width, so it shrinks to the select and covers
+  nothing else - the auth suite clicks a centred form right underneath it, which
+  is what keeps that honest.
+-->
+<div class="fixed top-3 right-3 z-10">
+  <ThemePicker />
+</div>
 
 <main class="hero min-h-screen">
   <div class="hero-content w-full max-w-sm">

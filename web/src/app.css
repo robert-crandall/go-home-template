@@ -3,7 +3,21 @@
 /* daisyUI is loaded as a Tailwind plugin from here, so there is no
    tailwind.config.js. Use semantic colors only (bg-base-100, text-base-content,
    btn-primary): a hardcoded bg-white survives the theme switch and looks broken
-   in dark mode. Theme switching itself lands in M3. */
+   in dark mode.
+
+   Muted text has a floor: `text-base-content/60` is the lightest alpha that
+   clears WCAG AA's 4.5:1 for body text, so don't reach past it. Measured
+   against daisyUI 5.7.4's stock tokens, where light `base-100` is pure white
+   and `base-content` is oklch(21% .006 285.885):
+
+     /40 -> 2.53:1    /50 -> 3.38:1    /60 -> 4.64:1    /70 -> 6.54:1
+     /45 -> 2.92:1    /55 -> 3.95:1    /65 -> 5.49:1    /75 -> 7.83:1
+
+   Light is the binding theme, and darkening the token wouldn't rescue it: over
+   white, even pure black at 40% tops out at 2.85:1. Related, and easy to reach
+   for by mistake - `text-error` is a surface color, under 3:1 on `base-100`, so
+   it fails as body text. The paired `alert alert-error` clears AA, which is why
+   every error in this app is an alert. */
 @plugin "daisyui" {
   themes: light --default, dark --prefersdark;
 }
