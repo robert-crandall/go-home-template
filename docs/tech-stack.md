@@ -602,11 +602,11 @@ in the graph by a wide margin (2m50s of a 2m54s cold run).
 Both build stages are still pinned to `$BUILDPLATFORM` even so, and that pinning
 isn't vestigial: it's what lets an arm64 dev machine build the amd64 image
 without QEMU. Measured on an Apple Silicon Mac running
-`buildx build --platform linux/amd64`, the Go compile step takes 3.6s pinned and
-19.4s unpinned - 9.3s against 50s end to end. Go cross-compiles for free, so
-there's no reason to pay the emulation tax on the one path that would otherwise
-pay it. `$TARGETOS` is declared alongside `$TARGETARCH` rather than hardcoding
-`linux`, so the `ARG`s and the build command can't drift apart.
+`docker buildx build --platform linux/amd64`, the Go compile step takes 3.6s
+pinned and 19.4s unpinned - 9.3s against 50s end to end. Go cross-compiles for
+free, so there's no reason to pay the emulation tax on the one path that would
+otherwise pay it. `$TARGETOS` is declared alongside `$TARGETARCH` rather than
+hardcoding `linux`, so the `ARG`s and the build command can't drift apart.
 
 `CGO_ENABLED=0` matters twice: it's what makes `distroless/static` viable, and
 it's consistent with the foundation's decision not to support HEIC/AVIF
