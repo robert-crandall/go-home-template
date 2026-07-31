@@ -80,7 +80,7 @@
     {#if email}
       <p class="truncate px-1 pb-2 text-sm text-base-content/60" title={email}>{email}</p>
     {/if}
-    <div class="flex items-center justify-between gap-2">
+    <div class="flex items-start justify-between gap-2">
       <ThemePicker />
       <SignOutButton />
     </div>

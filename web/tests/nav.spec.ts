@@ -221,3 +221,28 @@ test('history and deep links keep the marker honest', async ({ page }) => {
     await onlyCurrent(page, target.href);
   });
 });
+
+test('a failed sign-out stacks under the button rather than beside the theme picker', async ({
+  page
+}) => {
+  // The footer lays its children out in a flex *row*, so this is entirely about
+  // how many roots `SignOutButton` renders. When it rendered the button and the
+  // alert as siblings, the alert became a third item in that row and squeezed
+  // the theme picker into a ~100px sidebar column. Asserting the boxes rather
+  // than the markup keeps this about the thing that was actually broken.
+  await signIn(page);
+  await page.setViewportSize(DESKTOP);
+  await page.goto('/');
+
+  await page.route('**/api/auth/logout', (route) => route.fulfill({ status: 500, body: '{}' }));
+  await page.getByRole('button', { name: 'Log out' }).click();
+
+  const alert = page.getByRole('alert');
+  await expect(alert).toBeVisible();
+
+  const picker = await page.getByLabel('Theme').boundingBox();
+  const failure = await alert.boundingBox();
+  expect(picker).not.toBeNull();
+  expect(failure).not.toBeNull();
+  expect(failure!.y).toBeGreaterThanOrEqual(picker!.y + picker!.height);
+});
