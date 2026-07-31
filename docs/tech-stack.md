@@ -721,6 +721,50 @@ it's worth being precise about what it buys:
   older than one that already promoted; it is not a maximum. Correctness
   survives because a cancelled job cannot write.
 
+**Two booleans gate three jobs, so walk the combinations rather than trusting the
+`if:` expressions to read correctly.** `guard` emits `publish` and `promote_main`;
+`build` is gated on the first, `promote` on the second *and* on
+`needs: [guard, build]`:
+
+| `publish` | `promote_main` | `build` | `promote` | When | Right? |
+|---|---|---|---|---|---|
+| true | true | runs | runs | fresh main merge, or a dispatch on main | job runs; it moves `:main` only if its re-read of the tip still equals the ref it built, and no-ops otherwise |
+| true | true | **fails** | **skipped** | build broke | yes - never move `:main` onto an image no job pushed |
+| true | false | runs | **skipped** | `v*` tag push | yes - `:v1.2.3` is already immutable, `:main` didn't move |
+| false | false | **skipped** | **skipped** | stale main, red CI, non-push CI, cancelled CI, dispatch off main | yes - the green-wrapper-with-nothing-published case |
+| false | true | skipped | *unreachable* | - | the dangerous one |
+
+If `guard` itself fails the matrix doesn't apply at all: there are no outputs to
+trust, both downstream jobs skip through `needs`, and the workflow goes red. That
+is a different state from the `false/false` row, which is a *successful* decision
+to publish nothing - worth keeping separate, because one should page someone and
+the other shouldn't.
+
+The last row is the one worth naming. Today it cannot happen: both paths that set
+`promote_main=true` (`workflow_run` and `workflow_dispatch`) set `publish=true` in
+the same breath - the `v*` tag path is the only one that separates them, and it
+sets `promote_main=false`. Even if one didn't, `promote`'s `needs: build` carries
+no status function, so a skipped `build` skips `promote` anyway. But that second protectionis a property of the YAML, not of the plan - it evaporates the moment someone
+writes `if: always() && ...`, which is a natural thing to reach for when trying to
+make a skip render differently. So the combination is refused at the source: every
+publish-plan **test case** is additionally checked against four invariants, so a
+newly tested arm has to satisfy the workflow's contract and not just its own
+expected outputs. (This binds cases, not arms - an arm added with no test case is
+covered by nothing, same as any other untested code.) The invariants are that
+`promote_main` implies `publish`, that `publish` implies a non-empty `ref`, that
+`publish` implies at least one of `version`/`sha_tag`, and that `promote_main`
+implies a `sha_tag` for `imagetools` to copy from. Each was confirmed to fail when
+its specific violation is introduced into the script, rather than being assumed to
+work because the suite is green.
+
+The `ref` invariant is the least obvious and the worst if it breaks. `build`
+checks out `needs.guard.outputs.ref`; a misspelled output name in that expression
+yields an **empty string rather than an error**, and `actions/checkout` treats an
+empty `ref` as "whatever triggered this run" - which under `workflow_run` is the
+default branch tip, not the commit CI validated. The failure mode is a silent
+publish of the wrong commit, and it is invisible on any merge where those two
+happen to be the same commit.
+
 "Visibly skipped" therefore renders three ways. The common case (the newer
 commit merged before the older run's guard) is a genuinely skipped `build` job.
 The rarer promote-time cases are a skipped *step* inside `promote`, or a
@@ -824,6 +868,36 @@ secrets it doesn't have:
   pull requests, not on cancellations, and not on success. A notification that
   fires when things are fine is a notification you learn to ignore.
 - A Watchtower webhook, from `promote`, after `:main` really moved.
+
+**The first merge of this milestone is the first live test of the Watchtower
+unset-secret guard and of Notify's stay-silent-on-green decision - but not of
+Slack's unset-secret guard**, because `workflow_run` resolves its trigger
+configuration from the file on the default branch and nothing here can fire from
+the PR that introduces it. The repo had zero secrets and zero variables at merge
+time (checked: repo secrets 0, repo variables 0, and the single `copilot`
+environment empty and referenced by no job), so that first run exercises the
+unset-secret path for real rather than in review.
+
+The asymmetry is worth separating, because it decides what the first merge
+actually buys:
+
+- The **Watchtower** guard runs when `promote` actually moves `:main`: it sets
+  `promoted=true`, the ping step executes, and the
+  `[ -z "$WATCHTOWER_WEBHOOK_URL" ]` branch logs that there was nothing to
+  notify. Proven live - but anchored to that log line, not to a green run. A
+  green Publish also covers "the guard declined" and "`promote` no-opped because
+  main moved", and in neither of those does the ping step execute at all.
+- The **Slack** guard does not. It sits *inside* the `Post to Slack` step, which
+  is gated on `notify == 'true'`, and a green merge decides `notify=false` - so
+  the step is skipped and the guard never executes. It stays reviewable-only
+  until `main` genuinely breaks. The decision that reaches it is table-tested;
+  the two-line guard behind it is not.
+
+The corollary is that the evidence is spendable: set `WATCHTOWER_WEBHOOK_URL`
+before that first promotion and the live half is never observed.
+(`WATCHTOWER_TOKEN` is exempt - it is never read unless the URL is set.) The
+README says so next to the secrets so nobody trades it away while following setup
+instructions.
 
 The subtlety the notification test table exists to catch: a Publish run's
 `workflow_run.event` is `workflow_run` when CI triggered it and

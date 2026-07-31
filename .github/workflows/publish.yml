@@ -187,8 +187,12 @@ jobs:
           tip=$(gh api "repos/${{ github.repository }}/branches/main" --jq .commit.sha)
           test -n "$tip"
           if [ "$tip" != "$EXPECTED" ]; then
-            echo "main moved to $tip while $EXPECTED was building; leaving :main alone."
-            echo "The newer commit's own publish run will move it." >> "$GITHUB_STEP_SUMMARY"
+            # Both destinations get the whole message. The step summary is what
+            # a maintainer actually reads in the UI, and half a sentence there
+            # ("...will move it") has no antecedent without the first half.
+            msg="main moved to $tip while $EXPECTED was building; leaving :main alone. The newer commit's own publish run will move it."
+            echo "$msg"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           # A registry-side manifest copy of an image that already exists: no

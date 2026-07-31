@@ -227,8 +227,50 @@ func TestPublishPlan(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assertOutputs(t, "publish-plan.sh", run(t, "publish-plan.sh", tc.env), tc.want)
+			got := run(t, "publish-plan.sh", tc.env)
+			assertOutputs(t, "publish-plan.sh", got, tc.want)
+			assertPlanInvariants(t, got)
 		})
+	}
+}
+
+// assertPlanInvariants runs against the output of every publish-plan *test case*,
+// so an arm that has a test case has to satisfy the workflow's contract and not
+// merely its own expected outputs. It binds cases, not arms: an arm added with no
+// test case is covered by nothing here, same as any other untested code. Two
+// booleans gating three jobs is more state than the `if:` expressions make
+// obvious, and each of these four properties is load-bearing for a specific line
+// of publish.yml.
+func assertPlanInvariants(t *testing.T, got map[string]string) {
+	t.Helper()
+
+	// `promote` moves the mutable tag onto an image `build` pushed. Today it is
+	// also protected by `needs: [guard, build]` with no status function in its
+	// `if:`, which means a skipped or failed build already skips it. But that is
+	// a property of the YAML, not of the plan, and it would evaporate the moment
+	// someone wrote `if: always() && ...`. Refuse to emit the combination at all.
+	if got["promote_main"] == "true" && got["publish"] != "true" {
+		t.Errorf("promote_main=true with publish=%q: would move :main to an image no job pushed", got["publish"])
+	}
+
+	// `build` checks out `needs.guard.outputs.ref`. actions/checkout treats an
+	// empty `ref` as "whatever triggered the run" - and under workflow_run that
+	// is the default branch tip, not the commit CI validated. An empty ref here
+	// does not fail; it silently builds and publishes the wrong commit.
+	if got["publish"] == "true" && got["ref"] == "" {
+		t.Error("publish=true with an empty ref: checkout would silently fall back to the default branch")
+	}
+
+	// The tag is composed as `image:${{ version || sha_tag }}`. With both empty
+	// that renders `ghcr.io/owner/repo:`, an invalid reference.
+	if got["publish"] == "true" && got["version"] == "" && got["sha_tag"] == "" {
+		t.Error("publish=true with neither version nor sha_tag: the computed tag would be `image:`")
+	}
+
+	// `promote` copies from `$IMAGE:$SHA_TAG`, so the mutable-tag path needs the
+	// immutable tag by name - the version path never enters that job.
+	if got["promote_main"] == "true" && got["sha_tag"] == "" {
+		t.Error("promote_main=true with an empty sha_tag: promote has no source image to copy from")
 	}
 }
 

@@ -285,6 +285,26 @@ had nothing to notify and stays green. Same for `SLACK_WEBHOOK_URL`, which the
 notification workflow uses to report a broken `main`. A fork of this template
 with no secrets configured works; it just doesn't tell anyone anything.
 
+> **Leave `WATCHTOWER_WEBHOOK_URL` unset until you've seen your first `:main`
+> promotion.** A fresh fork has no secrets, so that first run exercises the
+> unset-secret path against the live workflows - the only free, unmocked evidence
+> that a fork of this template isn't broken by the secrets its author never
+> configured. Two guards, and they're proven at different moments:
+>
+> - The **Watchtower** guard is proven the first time `promote` actually moves
+>   `:main`. Anchor on the log line, not on a green run: a green Publish can also
+>   mean the guard declined or `promote` no-opped because `main` moved, and in
+>   both of those the ping step never executes. What you're looking for is
+>   `WATCHTOWER_WEBHOOK_URL is unset - nothing to notify` in `promote`.
+> - The **Slack** guard isn't proven by any healthy merge, first or otherwise. It
+>   sits inside the `Post to Slack` step, which only runs when there's something
+>   to report. If you want that evidence too, leave `SLACK_WEBHOOK_URL` unset
+>   until the first time `main` genuinely breaks - which is a different and much
+>   later moment than the Watchtower one, so don't hold up your setup for it.
+>
+> `WATCHTOWER_TOKEN` is exempt - it's never read unless the URL is set, so
+> configuring it early costs nothing.
+
 ### Configuration
 
 | Variable | Required | What it does |
