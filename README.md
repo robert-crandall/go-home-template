@@ -204,6 +204,87 @@ docker buildx build --platform linux/amd64,linux/arm64 .
 docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/you/myapp:latest --push .
 ```
 
+### Published images
+
+You don't have to run either of those by hand. Merging to `main` publishes the
+image to GHCR, and `.github/workflows/publish.yml` does it:
+
+| Tag | When | Moves? |
+| --- | --- | --- |
+| `ghcr.io/<owner>/<repo>:main` | every green merge to `main` | yes - this is the one to deploy |
+| `ghcr.io/<owner>/<repo>:sha-<full commit sha>` | every green merge to `main` | never |
+| `ghcr.io/<owner>/<repo>:v1.2.3` | pushing a `v*` git tag | never |
+
+The image path comes from `${{ github.repository }}`, lowercased, so a repo made
+from this template publishes under its own name with nothing to edit. Deploy
+`:main` and pin an incident to a `:sha-...` when you need to know exactly what
+was running.
+
+Pushing a `v*` tag publishes `:v1.2.3` only. It deliberately does not move
+`:main`, so tagging a release doesn't redeploy anything on its own.
+
+### Pulling it from a machine that isn't logged in
+
+**GHCR packages start private, and the denial looks like a typo.** A pull
+without credentials reports `denied` or a 404 - not "log in" - so the first
+thing to check when a fresh host can't find an image that plainly exists is
+whether the host is authenticated at all. Pick one:
+
+```sh
+# Option A: make the package public. Repo -> Packages -> the package ->
+# Package settings -> Change visibility. Nothing to configure on the host.
+
+# Option B: keep it private and log the host in with a PAT that has read:packages.
+echo "$GHCR_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+
+If you keep it private, **Watchtower needs those credentials too** - it pulls on
+its own schedule, not through your shell. Mount the config you just created:
+
+```yaml
+volumes:
+  - /root/.docker/config.json:/config.json:ro
+```
+
+(That path is the one root's `docker login` writes. Use whichever home directory
+the daemon user actually has.)
+
+### Automatic updates
+
+The host pulls new images itself; GitHub Actions holds no key to your homelab.
+Add Watchtower to the same compose stack:
+
+```yaml
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Only if your GHCR package is private - see above.
+      # - /root/.docker/config.json:/config.json:ro
+    command: --cleanup --interval 300
+    # Uncomment to accept the publish workflow's webhook as well as polling.
+    # ports:
+    #   - '8080:8080'
+    # environment:
+    #   WATCHTOWER_HTTP_API_UPDATE: 'true'
+    #   WATCHTOWER_HTTP_API_TOKEN: your-token-here
+```
+
+Polling every five minutes is enough on its own. To make a merge land in
+seconds instead, uncomment the HTTP API lines above and set two **optional**
+repository secrets - `WATCHTOWER_WEBHOOK_URL` (the `/v1/update` endpoint of
+whatever you exposed, e.g. `https://watchtower.example.com/v1/update`) and
+`WATCHTOWER_TOKEN` (the same value as `WATCHTOWER_HTTP_API_TOKEN`). The publish
+workflow pings the URL after it moves `:main`. Don't expose that port to the
+internet without something in front of it: a valid token there triggers a pull
+and restart.
+
+Both are optional in the real sense: with neither set, the workflow logs that it
+had nothing to notify and stays green. Same for `SLACK_WEBHOOK_URL`, which the
+notification workflow uses to report a broken `main`. A fork of this template
+with no secrets configured works; it just doesn't tell anyone anything.
+
 ### Configuration
 
 | Variable | Required | What it does |
@@ -254,7 +335,7 @@ second half-configured stack is worse than none. Here's the part to paste in:
 ```yaml
 services:
   app:
-    image: myapp
+    image: ghcr.io/you/myapp:main
     restart: unless-stopped
     ports:
       - '8080:8080'
