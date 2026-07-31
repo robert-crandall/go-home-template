@@ -706,20 +706,20 @@ a job-level `concurrency` group of its own (`cancel-in-progress: false`). That
 is not the workflow-wide concurrency this ADR rejects above; it is narrower, and
 it's worth being precise about what it buys:
 
-- **It guarantees** that promote jobs never overlap, so a promote running after
-  a newer one sees the newer tip and declines. No older publish can overwrite a
-  newer one - which is the failure issue #8 names, gone.
+- **It guarantees** that promote jobs never overlap, and that `:main` is never
+  rolled backwards - a promote running after a newer one has already moved the
+  tag re-reads the newer tip and declines. That is the failure issue #8 names,
+  gone.
 - **It does not guarantee** that the re-read and the tag move are atomic. A
   newer commit can land in between, in which case `:main` goes to the older
   image and then the newer commit's own promote moves it forward. Transient and
-  self-correcting.
+  self-correcting - a lag, not a rollback.
 - **Nor does it guarantee** that `:main` always ends up on the newest commit
   that successfully published. GitHub keeps one pending entry per concurrency
   group, so with A running, B pending and C queued, B gets cancelled - and if C
   then declines or fails, `:main` stays at A even though B's immutable tag
-  exists. `:main` is always *a* commit that published successfully and is never
-  older than one that already promoted; it is not a maximum. Correctness
-  survives because a cancelled job cannot write.
+  exists. `:main` is always *a* commit that published successfully, but it is
+  not a maximum. Correctness survives because a cancelled job cannot write.
 
 **Two booleans gate three jobs, so walk the combinations rather than trusting the
 `if:` expressions to read correctly.** `guard` emits `publish` and `promote_main`;
