@@ -744,9 +744,11 @@ The last row is the one worth naming. Today it cannot happen: both paths that se
 `promote_main=true` (`workflow_run` and `workflow_dispatch`) set `publish=true` in
 the same breath - the `v*` tag path is the only one that separates them, and it
 sets `promote_main=false`. Even if one didn't, `promote`'s `needs: build` carries
-no status function, so a skipped `build` skips `promote` anyway. But that second protectionis a property of the YAML, not of the plan - it evaporates the moment someone
-writes `if: always() && ...`, which is a natural thing to reach for when trying to
-make a skip render differently. So the combination is refused at the source: every
+no status function, so a skipped `build` skips `promote` anyway. But that second
+protection is a property of the YAML, not of the plan - it evaporates the moment
+someone writes `if: always() && ...`, which is a natural thing to reach for when
+trying to make a skip render differently. So the combination is refused at the
+source: every
 publish-plan **test case** is additionally checked against four invariants, so a
 newly tested arm has to satisfy the workflow's contract and not just its own
 expected outputs. (This binds cases, not arms - an arm added with no test case is
