@@ -346,12 +346,30 @@ Tailwind plugin from the stylesheet, with no `tailwind.config.js` at all:
 }
 ```
 
-Theme selection will be `data-theme` on `<html>`, persisted in `localStorage`,
-with a tiny inline script in `app.html` that applies the saved theme *before* the
-app boots. Without that script a static SPA paints the default theme for a frame
-and then snaps to the user's choice. **None of that exists yet** - M2 shipped the
-two screens without theming, and `app.html` has no inline script today. M3 builds
-it; this paragraph is the spec it has to satisfy, not a description of `main`.
+Theme selection is `data-theme` on `<html>`, persisted in `localStorage`, applied
+by a synchronous inline script in `app.html` that runs *before* the app boots.
+M3 shipped it (`web/src/lib/theme.svelte.ts`, plus the picker in
+`+layout.svelte`), and the shape is worth knowing because it's less code than it
+looks like it should be.
+
+The stored preference is three-way - `system`, `light`, `dark` - and **the
+attribute is only set for an explicit light or dark choice.** daisyUI compiles
+`--prefersdark` to a `prefers-color-scheme: dark` rule scoped to
+`:root:not([data-theme])`, so a visitor who never picked anything has no
+attribute and the palette is chosen by CSS at first paint. That's a flash that
+can't happen rather than a race we win, and system mode keeps following the OS
+live with no `matchMedia` call anywhere in the app.
+
+A two-state sun/moon toggle would be worse for exactly that reason: it has to
+resolve the OS preference into a stored `light`/`dark` at boot, which both adds
+the `matchMedia` call and *loses* the live following.
+
+The no-flash claim is measured in `web/tests/theme.spec.ts` by aborting every
+`.js` request and asserting the page is still correctly themed - if the theme
+survives with zero application JavaScript, the inline script painted it. The
+step also asserts the abort count is non-zero, because a build change that moved
+the app's code out from under the pattern would otherwise let hydration run and
+quietly turn the proof vacuous.
 
 **Why daisyUI:** it gives semantic component classes (`btn`, `card`, `input`,
 `navbar`) and a real theme system on top of Tailwind, so a template app looks
@@ -376,7 +394,10 @@ The entire frontend:
   real errors rather than a status-code-to-message table of its own, so whatever
   the server refuses with is what the person reads.
 - `/` - guarded. Says hello to `user.email` and has a logout button. This is the
-  "hello world." M3 adds the theme switcher.
+  "hello world."
+- A theme picker in the layout, so it's on both screens and a signed-out visitor
+  can use it too. System / Light / Dark, in a `<select>` - see D5 for why the
+  control is three-way rather than a toggle.
 - A route guard that calls `GET /api/auth/me` once on boot and redirects to
   `/login` on 401. It runs in `load`, not in the component, so a signed-out
   visitor gets a redirect and never a frame of the greeting. Known limitation:
@@ -416,11 +437,26 @@ end: cookie auth, the generated client, the embedded SPA, deep-link fallback, an
 the styling layer. A third screen proves nothing new about the stack and costs
 every app that starts here.
 
-The template does ship static PWA metadata (`manifest.webmanifest`, icons)
-because it's inert markup with no code to delete. It does **not** ship a service
-worker: SvelteKit auto-registers `src/service-worker.ts` in production builds, so
-a half-considered one is an asset-caching bug waiting to happen in every app that
-forgets it's there. See "Deliberately not here" for the web push consequence.
+The template ships static PWA metadata (`manifest.webmanifest`, `icon-192.png`,
+`icon-512.png`, and the `theme-color` metas) because it's inert markup with no
+code to delete. `web/dist_test.go` asserts every `icons[].src` resolves inside
+the embedded filesystem and that each file's real pixel dimensions match its
+declared `sizes` - the foundation's SPA handler falls back to `index.html` with a
+200 for any path it can't open, so a typo'd icon path serves HTML and looks fine
+in every manual check.
+
+It does **not** ship a service worker: SvelteKit auto-registers
+`src/service-worker.ts` in production builds, so a half-considered one is an
+asset-caching bug waiting to happen in every app that forgets it's there. See
+"Deliberately not here" for the web push consequence. What that costs is offline
+support, asset caching, and the *automatic* install prompt. Installing still
+works: Chrome dropped the fetch-handler requirement for installing from the
+menu (v108 mobile, v112 desktop), and `Page.getAppManifest` reports no errors
+for what ships here. What still requires a `fetch()` handler is the heuristic
+that offers the prompt unasked - so the app is installable, it just never asks.
+See [Chrome's post on the criteria change][install-criteria].
+
+[install-criteria]: https://developer.chrome.com/blog/update-install-criteria
 
 ### D7 - One binary, no reverse proxy in the container
 
@@ -568,10 +604,13 @@ visitor hitting `/` bounces to `/login`, register the first user and get
 greeted, reload and stay signed in, a logout the server refused (two failure
 modes, driven by a mocked response), log out for real and stay logged out
 across a reload, a wrong password, a second registration refused, log back in.
-M3 adds the theme toggle
-to the same flow. It is the only test that exercises the embedded SPA, the
-cookie round trip, and the deep-link fallback together, which is why it's worth
-the Playwright dependency.
+It is the only test that exercises the embedded SPA, the cookie round trip, and
+the deep-link fallback together, which is why it's worth the Playwright
+dependency.
+
+M3 added a second spec rather than more steps to that one, because theming
+shares no state with the auth flow and a `theme.spec.ts` that never signs in
+can't perturb it. Its interesting step is the no-flash proof described in D5.
 
 Exactly one step is mocked, because a healthy server cannot produce what it
 checks: logout returning 500, and logout failing at the network layer. Both
@@ -691,12 +730,22 @@ Two constraints on its design:
 
 - **A name alone isn't enough.** `github.com/<owner>/<repo>` can't be derived
   from `my-app`, which is why `MODULE` exists as a separate input.
-- **Rename first, generate second.** `docs/openapi.json` embeds the API title
-  and `web/build` embeds the manifest, so running `make setup` before
-  `make init` leaves generated output carrying the old identity. `make init`
-  therefore regenerates both at the end and fails if any old identifier
-  survives anywhere in the tree. That last check is what makes this reliable
-  rather than a checklist people half-follow.
+- **Rename first, generate second.** `docs/openapi.json` embeds the API title and
+  `web/build` embeds the manifest, so running `make setup` before `make init`
+  leaves generated output carrying the old identity. `make init` doesn't
+  regenerate anything - it rewrites every tracked *text* file in one pass
+  (`scripts/init.sh:70-103`) and then greps those same files for leftovers
+  (`scripts/init.sh:117-124`), failing if any old identifier survives. That
+  works out because `docs/openapi.json` is tracked text and gets rewritten in
+  the same pass, and `web/build/` is gitignored output that `make setup`
+  rebuilds - which is the very next thing init.sh tells you to run. The
+  leftover check is what makes this reliable rather than a checklist people
+  half-follow.
+
+  The PNG icons are skipped by that pass, because init.sh's `grep -Iq .` test
+  treats them as binary. That's correct rather than a gap: they carry no
+  identity to rewrite. `manifest.webmanifest` is text, so its `name` and
+  `short_name` are rewritten like everything else.
 
 The GHCR path is deliberately *not* rewritten: the workflow uses
 `${{ github.repository }}` so there's nothing to rename.

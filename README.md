@@ -99,6 +99,36 @@ Registration is gated by `ALLOW_OPEN_REGISTRATION`. It defaults to `false`,
 which means "the first account only" - fine for a single-user app, which is what
 this template is shaped for. Set it to `true` if you want anyone to sign up.
 
+## Theming and install metadata
+
+A System / Light / Dark picker sits in the layout, so it's on both screens and
+works signed out. The choice lands in `localStorage` and a synchronous inline
+script in `web/src/app.html` applies it before the app boots - so a reload, a
+browser restart, or a deep link all paint the right palette on the first frame,
+never the wrong one first.
+
+The bit worth knowing if you edit it: `data-theme` is only set for an explicit
+light or dark choice. daisyUI scopes its dark rule to `:root:not([data-theme])`,
+so **System** means no attribute and lets CSS decide, which is both flash-proof
+by construction and keeps following the OS live. Adding a fourth theme means
+four edits, and the fourth is easy to miss: the `themes:` list in
+`web/src/app.css`, the `Theme` union and the values `read()` accepts in
+`web/src/lib/theme.svelte.ts`, the `options` array in `+layout.svelte`, **and
+the inline script's own whitelist in `web/src/app.html`** - it can't import the
+TypeScript, so it repeats the valid values by hand.
+
+`web/static/` carries `manifest.webmanifest` and two PNG icons, plus a
+`theme-color` meta pair, so a home-screen shortcut gets a real icon and a
+sensibly tinted title bar. Regenerate the PNGs from `icon.svg` if you change the
+artwork - the `rsvg-convert` command is in a comment at the top of that file.
+
+There's deliberately no service worker, so there's no offline support and no
+asset caching. The app is still installable from the browser menu - Chrome
+dropped the fetch-handler requirement for that - but nothing will offer to
+install it unprompted, because that heuristic does still want a service worker.
+See D6 in [`docs/tech-stack.md`](docs/tech-stack.md) for why the service worker
+is the piece left out.
+
 ## Testing
 
 ```sh
