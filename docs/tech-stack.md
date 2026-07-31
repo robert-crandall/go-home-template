@@ -58,7 +58,7 @@ graph TD
 
 | Layer | Choice | Version at time of writing |
 |---|---|---|
-| Backend foundation | `go-home-server` | >= v0.1.5 |
+| Backend foundation | `go-home-server` | >= v0.1.6 |
 | Language | Go | 1.26 |
 | HTTP | chi + huma (from the foundation) | - |
 | Database | Postgres, one instance | >= 14; CI tests on 18 |
@@ -87,7 +87,7 @@ thumbnails, web push, graceful shutdown, `/healthz`) comes in as a dependency.
 every app picks it up with `go get -u`. Vendoring the source into the template
 would break that on day one.
 
-**Minimum version: v0.1.5.** See "Foundation version" at the end.
+**Minimum version: v0.1.6.** See "Foundation version" at the end.
 
 **Consequence:** the template must not reimplement anything the foundation
 offers. If a template app needs different auth behavior, the fix goes upstream.
@@ -198,6 +198,13 @@ scheme that isn't declared. `Session` is for credential-management routes,
 operation on: these helpers also install the session scheme on it if it's
 missing. The template never writes scheme names by hand; that was [#33], and
 hand-written literals are exactly what `apisec` exists to stop.
+
+`GET /api/app` is the one route the template registers itself, so it is also the
+worked example rather than an invented one - `apisec.Public()`, because its
+whole job is to be read by a signed-out visitor on the login page (D6). Under
+the default gate it exposes one bit, whether a non-deleted account exists, which
+`POST /api/auth/register` already gives away by refusing; with
+`ALLOW_OPEN_REGISTRATION=true` it is a constant and exposes nothing.
 
 **Why `openapi-typescript` + `openapi-fetch` over a full client generator:**
 `openapi-fetch` is a thin typed wrapper over `fetch` (roughly 6 kB minified)
@@ -430,9 +437,10 @@ switch and looks broken in dark mode.
 
 The entire frontend:
 
-- `/login` - email and password, with a register tab. Surfaces the foundation's
-  real errors rather than a status-code-to-message table of its own, so whatever
-  the server refuses with is what the person reads.
+- `/login` - email and password. Surfaces the foundation's real errors rather
+  than a status-code-to-message table of its own, so whatever the server refuses
+  with is what the person reads. The Log in / Register pair is there only while
+  registration is open - see below.
 - `/` - guarded. Says hello to `user.email` and has a logout button. This is the
   "hello world."
 - A theme picker in the layout, so it's on both screens and a signed-out visitor
@@ -458,6 +466,43 @@ never does: the foundation evaluates the registration gate *before* the
 duplicate-email lookup, so a second registration is always 403 `registration is
 closed`. Turn open registration on (`cmd/server/main.go` wires it to
 `authSvc.OpenRegistration`) and 409 becomes reachable in the browser normally.
+
+**The Register control only exists while registration would be accepted (#38).**
+`GET /api/app` returns `{registrationOpen}` from
+`auth.Service.RegistrationOpen`, which runs the same predicate the register
+handler runs; `/login`'s `load` reads it and the page renders the Log in /
+Register pair only when the answer is yes, opening on Register. Under the
+default gate that window lasts until the first non-deleted account exists -
+usually the first thing whoever deployed it does, and the whole point is that
+it's the one moment where nothing else signals that registering is the thing to
+do. After it, the pair is gone and `/login` is a login form - rather than a
+Register tab that is a dead end for the rest of the app's life. The gate is
+recomputed per request rather than latched, so soft-deleting the last user or
+pointing the binary at an empty database reopens it and the pair comes back;
+that is the foundation's behavior, and this page just reports it.
+
+It stays a *pair* rather than becoming "the register form" because
+`ALLOW_OPEN_REGISTRATION=true` holds the answer at `true` forever, and an app in
+that mode still has to be able to log in. One bool can't distinguish "open
+because there's no account yet" from "open because it's configured that way",
+and it doesn't need to: defaulting to Register while leaving Log in reachable is
+right for both.
+
+The state is **advisory**, and the page is written to be wrong about it. Under
+the default gate the register handler re-checks inside its transaction, holding
+a `pg_advisory_xact_lock`, so a page that loaded a moment before someone else
+registered still has `registrationOpen: true` and will submit into a 403 - which
+it renders like any other refusal. (With open registration on there is nothing
+to race: the answer is `true` and stays `true`, and the foundation takes no lock
+at all.) `load` falls back to *closed* when the call fails, because login is the
+case for the whole life of a single-account app and offering a registration the
+server would refuse anyway helps nobody.
+
+That race is also the only way the browser suite can still see 403, now that the
+control is hidden when the gate is closed: one step stubs `GET /api/app` to
+`{"registrationOpen": true}`, which is exactly what a page that loaded too early
+is holding. The rest of the suite runs against the real endpoint in both states,
+which is what proves the endpoint flips at all.
 
 The E2E suite runs with the gate closed, because that's the default a new app
 gets, so it pins 403 and 401 and can't observe 409. `internal/app/api_test.go`
@@ -1325,10 +1370,11 @@ Accepted here:
 
 ## Foundation version
 
-**This template requires `go-home-server` v0.1.5 or later.** Not a soft
+**This template requires `go-home-server` v0.1.6 or later.** Not a soft
 preference: `auth.Service.TokenHumaConfig` landed in v0.1.4 and `RegisterTokens`
-panics without it, and the `apisec` package landed in v0.1.5, so the wiring in
-D3 and D11 won't compile or boot against anything earlier.
+panics without it, the `apisec` package landed in v0.1.5, and
+`auth.Service.RegistrationOpen` landed in v0.1.6 - so the wiring in D3, D6 and
+D11 won't compile or boot against anything earlier.
 
 That work came out of writing this document's first draft against v0.1.3, which
 turned up ten things that belonged upstream rather than worked around here. What
@@ -1337,5 +1383,13 @@ is a two-part pairing, and app routes declare security through `apisec`), D4
 (the cache-prefix mismatch is gone and the `fs.Sub` mistake is a boot panic), D7
 and the threat model (both cite upstream rather than assert), and D11.
 
+v0.1.6 came from the same instinct, one release later: `/login` needed to know
+whether registration was open, and the only way to answer that from an app was
+to re-run the gate's `SELECT count(*) FROM users WHERE deleted_at IS NULL` in a
+second repository. Two copies of one predicate that have to agree, with nothing
+failing a build when they drift. `RegistrationOpen` is the same query, exported
+([#36]).
+
 [#33]: https://github.com/robert-crandall/go-home-server/issues/33
 [#34]: https://github.com/robert-crandall/go-home-server/pull/34
+[#36]: https://github.com/robert-crandall/go-home-server/issues/36

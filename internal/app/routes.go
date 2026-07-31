@@ -9,8 +9,10 @@ package app
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/robert-crandall/go-home-server/apisec"
 	"github.com/robert-crandall/go-home-server/auth"
 	"github.com/robert-crandall/go-home-server/files"
 	"github.com/robert-crandall/go-home-server/notify"
@@ -57,4 +59,54 @@ func RegisterRoutes(api huma.API, deps Deps) {
 	}
 
 	// Add your app's own routes here.
+	registerAppState(api, deps.Auth)
+}
+
+// AppState is what the SPA needs to know before anyone has signed in. One field
+// today; it's a struct rather than a bare bool so adding the next one isn't a
+// breaking change to the contract.
+type AppState struct {
+	// RegistrationOpen reports whether POST /api/auth/register would be
+	// accepted right now. Advisory: under the default gate the register
+	// handler re-checks inside its transaction, holding an advisory lock, so a
+	// caller can lose the race between asking and posting.
+	RegistrationOpen bool `json:"registrationOpen" doc:"Whether registration is currently accepted"`
+}
+
+// registerAppState mounts GET /api/app.
+//
+// This is the template's one app-owned route, and the worked example for the
+// line above: an operation registered here, with its security declared through
+// apisec rather than by naming schemes by hand (D3).
+//
+// Public because its whole purpose is to be read by a signed-out visitor on the
+// login page. Under the default gate that exposes one bit - whether a
+// non-deleted account exists - which `POST /api/auth/register` already gives
+// away by refusing. With open registration on it's a constant.
+//
+// Note it only *describes* the operation here; the query runs per request, so
+// spec generation against a nil pool is unaffected.
+func registerAppState(api huma.API, authSvc *auth.Service) {
+	huma.Register(api, huma.Operation{
+		OperationID: "get-app-state",
+		Summary:     "App state",
+		Description: "State the SPA needs before anyone has signed in.",
+		Method:      http.MethodGet,
+		Path:        "/api/app",
+		Errors:      []int{http.StatusInternalServerError},
+		Security:    apisec.Public(),
+	}, func(ctx context.Context, _ *struct{}) (*appStateOutput, error) {
+		open, err := authSvc.RegistrationOpen(ctx)
+		if err != nil {
+			// Deliberately not the wrapped error: huma renders err.Error() as
+			// the problem detail, and a Postgres error is not something an
+			// unauthenticated caller should read.
+			return nil, huma.Error500InternalServerError("could not read app state")
+		}
+		return &appStateOutput{Body: AppState{RegistrationOpen: open}}, nil
+	})
+}
+
+type appStateOutput struct {
+	Body AppState
 }
