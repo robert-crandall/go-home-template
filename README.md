@@ -270,9 +270,9 @@ themselves.
 
 ## Theming and install metadata
 
-A System / Light / Dark picker sits in the navigation shell - in the sidebar on
-desktop, in the header on a phone - and `/login` places its own copy, so it
-works signed out too. The choice lands in `localStorage` and a synchronous
+A System / Light / Dark picker sits in the navigation shell's footer - bottom
+of the sidebar on desktop, bottom of the drawer on a phone - and `/login` places
+its own copy, so it works signed out too. The choice lands in `localStorage` and a synchronous
 inline script in `web/src/app.html` applies it before the app boots - so a
 reload, a browser restart, or a deep link all paint the right palette on the
 first frame, never the wrong one first.

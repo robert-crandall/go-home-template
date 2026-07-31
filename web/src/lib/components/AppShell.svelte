@@ -18,7 +18,8 @@
   // exactly one of each, so the specs need no scoping to survive the drawer.
   let open = $state(false);
 
-  const sections = $derived(navSections());
+  // Not `$derived`: `navItems` is a module constant, so this can't change.
+  const sections = navSections();
   const current = $derived(currentHref(page.url.pathname));
   const email = $derived(page.data.user?.email ?? '');
 

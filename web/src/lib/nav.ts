@@ -11,7 +11,7 @@ export type NavItem = {
   label: string;
   /**
    * Optional section header. Consecutive entries carrying the same group render
-   * under one heading; an entry without a group renders on its own.
+   * under one heading; entries without a group render without one.
    *
    * A flat property rather than nested `{ label, items }` arrays on purpose:
    * with nested arrays a group has to exist before you can put a page in one,
