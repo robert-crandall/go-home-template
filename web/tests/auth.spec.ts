@@ -156,22 +156,19 @@ test('register, stay signed in across reloads, log out, and log back in', async 
     // not `data`, so a still-signed-in visitor gets bounced back to the
     // greeting instead of being handed the login form.
     //
-    // Asserted on content rather than URL because SvelteKit leaves the address
-    // bar on the history entry when a `load` redirects during a popstate
-    // navigation - the right page renders under the wrong URL. That's a real
-    // bug, filed as #18; it is not what this step is measuring, and it
-    // leaks nothing, since the content always matches the auth state.
+    // The URL is asserted alongside the content because a `load` that redirects
+    // during a popstate used to leave the address bar on the entry you went to
+    // (#18) - the greeting rendered under `/login`. The root layout now puts the
+    // bar back; drop the layout's `afterNavigate` and this line is what fails.
     const bounced = page.waitForEvent('framenavigated');
     await page.goBack();
     await bounced;
     await expect(greeting(page)).toBeVisible();
     await expect(credentialsForm(page)).toHaveCount(0);
+    await expect(page).toHaveURL(/\/$/);
 
     // Back to a clean history entry, so the real logout below is testing the
-    // app rather than the state this probe left behind. The URL is asserted
-    // here precisely because #18 is a URL bug: without it, a forward that
-    // didn't move would leave us on `/login`, and the next step's
-    // `toHaveURL(/\/login$/)` would pass without a logout ever happening.
+    // app rather than the state this probe left behind.
     await page.goForward();
     await expect(page).toHaveURL(/\/$/);
     await expect(greeting(page)).toBeVisible();
@@ -183,6 +180,18 @@ test('register, stay signed in across reloads, log out, and log back in', async 
     await page.reload();
     await expect(page).toHaveURL(/\/login$/);
     await expect(greeting(page)).toHaveCount(0);
+  });
+
+  await test.step('Back off the login page stays on the login page', async () => {
+    // The other direction of #18, and the one the issue measured as landing on
+    // `/`: signed out, with `/` still behind us in history, Back runs the
+    // guard on `/`, which bounces to `/login`. Content and URL both have to end
+    // up there. Without the fix the login form renders under `/`.
+    const bounced = page.waitForEvent('framenavigated');
+    await page.goBack();
+    await bounced;
+    await expect(credentialsForm(page)).toBeVisible();
+    await expect(page).toHaveURL(/\/login$/);
   });
 
   await test.step('a wrong password shows the server error inline', async () => {
