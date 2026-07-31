@@ -66,12 +66,18 @@ func TestIndexHTMLAppliesThemeBeforeBody(t *testing.T) {
 		t.Error("the inline theme script is not in <head> - it has to run before the body parses")
 	}
 
-	// The opening tag of the script that contains the storage read.
+	// The opening tag of the script that contains the storage read - bounded at
+	// its `>` rather than running to the read itself, so JS in the script body
+	// can never be mistaken for an attribute.
 	open := strings.LastIndex(html[:script], "<script")
 	if open < 0 {
 		t.Fatal("the theme storage read is not inside a <script> tag")
 	}
-	tag := html[open:script]
+	close := strings.Index(html[open:script], ">")
+	if close < 0 {
+		t.Fatal("the theme script's opening tag is unterminated")
+	}
+	tag := html[open : open+close+1]
 	if moduleAttr.MatchString(tag) {
 		t.Error("the inline theme script is a module, so the browser defers it until after parsing - it has to be a classic script to run before the first paint")
 	}

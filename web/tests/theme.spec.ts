@@ -3,10 +3,14 @@ import { expect, test, type Page } from '@playwright/test';
 /**
  * Theme switching and the install metadata, against the real binary.
  *
- * One test, like the auth suite, because the interesting claims are sequential:
- * a choice made in one step has to survive the reload, restart, and deep link in
- * the ones after it. Nothing here registers or logs in, so it shares the
- * database with `auth.spec.ts` without caring what state that leaves behind.
+ * Two tests. The theme one is a single sequential test, like the auth suite,
+ * because its claims build on each other: a choice made in one step has to
+ * survive the reload, restart, and deep link in the ones after it. The metadata
+ * one is separate because it shares no state with any of that - it's a handful
+ * of independent HTTP assertions plus Chrome's own manifest parser.
+ *
+ * Nothing here registers or logs in, so the file shares the database with
+ * `auth.spec.ts` without caring what state that leaves behind.
  *
  * `/login` is the page throughout: it's reachable signed out, and it's a deep
  * link, so the Go binary's SPA fallback is in the path every time.
