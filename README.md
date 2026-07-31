@@ -227,24 +227,45 @@ things:
 
 ```ts
 export const navItems: NavItem[] = [
-  { href: '/', label: 'Home', icon: '●' },
-  { href: '/notes', label: 'Notes', icon: '☰' }
+  { href: '/', label: 'Home' },
+  { href: '/notes', label: 'Notes' }
 ];
 ```
 
-That's the whole thing. The desktop sidebar and the phone bottom bar both read
-that array, so there's no second list to update, and `web/tests/nav.spec.ts`
-reads it too - it asserts every entry is reachable at both widths, so a new
-destination is covered the moment you add it. The current destination is marked
-by prefix, so `/notes/123` still highlights **Notes**.
+That's the whole thing. The desktop sidebar and the phone drawer both read that
+array, so there's no second list to update, and `web/tests/nav.spec.ts` reads it
+too - it asserts the rendered links are exactly `navItems` and that every one of
+them is reachable at both widths, so a new destination is covered the moment you
+add it, and a link hardcoded into the shell fails the build. The current
+destination is marked by prefix, so `/notes/123` still highlights **Notes**.
+
+An entry can carry an optional `group`, which puts a heading above it:
+
+```ts
+export const navItems: NavItem[] = [
+  { href: '/', label: 'Home' },
+  { href: '/notes', label: 'Notes', group: 'Writing' },
+  { href: '/drafts', label: 'Drafts', group: 'Writing' }
+];
+```
+
+The grouping is a property of the entry rather than a nested array, so a page
+never has to be added to a group before it can exist. Consecutive entries
+sharing a `group` become one section; headings are plain text, not links, and
+don't collapse. Ungrouped entries render with no heading, which is why a nav
+with no groups at all looks exactly like it did before.
 
 `/second` is a demo destination that exists so the shell has somewhere to
 navigate to. Delete `web/src/routes/(app)/second/` and its line in `navItems`
 when you have a real second page.
 
-The bottom bar divides the width evenly among however many destinations there
-are, with no overflow menu - past about six the labels start truncating. If you
-need more than that, you need different navigation than this shell.
+On a phone the destinations live behind the hamburger in the header, in a
+drawer that closes when you pick one. There is no overflow menu and nothing is
+ever hidden: the drawer scrolls.
+
+The sidebar and drawer both end in a footer carrying the signed-in email, the
+theme picker, and **Log out** - so pages don't have to build sign-out for
+themselves.
 
 ## Theming and install metadata
 

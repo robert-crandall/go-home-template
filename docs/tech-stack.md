@@ -388,9 +388,9 @@ Tailwind plugin from the stylesheet, with no `tailwind.config.js` at all:
 
 Theme selection is `data-theme` on `<html>`, persisted in `localStorage`, applied
 by a synchronous inline script in `app.html` that runs *before* the app boots.
-M3 shipped it (`web/src/lib/theme.svelte.ts`, plus the picker in
-`+layout.svelte`), and the shape is worth knowing because it's less code than it
-looks like it should be.
+M3 shipped it (`web/src/lib/theme.svelte.ts`, plus the picker, which M7 pulled out
+into `web/src/lib/components/ThemePicker.svelte`), and the shape is worth knowing
+because it's less code than it looks like it should be.
 
 The stored preference is three-way - `system`, `light`, `dark` - and **the
 attribute is only set for an explicit light or dark choice.** daisyUI compiles
@@ -456,8 +456,8 @@ rediscover it.
 `text-primary` has the same shape of problem in the *dark* theme - 3.4:1 on
 `base-100`, against 8.3:1 in light - which is enough for a border or an icon (a
 non-text marker needs 3:1) and short of AA for a label. So the navigation shell
-marks the current destination with weight and a primary *edge* rather than
-primary text; see D6.
+marks the current destination with weight and a `base-200` background rather
+than primary text; see D6.
 
 ### D6 - What the SPA does: a shell, and almost nothing in it
 
@@ -467,16 +467,17 @@ The entire frontend:
   real errors rather than a status-code-to-message table of its own, so whatever
   the server refuses with is what the person reads. It sits *outside* the
   navigation shell: there is nowhere to navigate to when you're signed out.
-- A navigation shell around everything else - sidebar on desktop, bottom bar on
-  a phone. Its own section below.
-- `/` - guarded. Says hello to `user.email` and has a logout button. This is the
-  "hello world."
+- A navigation shell around everything else - a sidebar on desktop, a hamburger
+  and a drawer on a phone. Its own section below.
+- `/` - guarded. Says hello. This is the "hello world," and it is now only a
+  greeting: the signed-in email and **Log out** moved into the shell's footer,
+  where every page gets them without writing them.
 - `/second` - guarded, and deliberately empty. It exists so the shell has
   somewhere to navigate *to*; see below.
 - A theme picker, so it's on every screen and a signed-out visitor can use it
   too. System / Light / Dark, in a `<select>` - see D5 for why the control is
-  three-way rather than a toggle. It lives in the shell's sidebar and phone
-  header, and `/login` places its own copy since it has no shell.
+  three-way rather than a toggle. It lives in the shell's footer, bottom-left,
+  and `/login` places its own copy since it has no shell.
 - A route guard that calls `GET /api/auth/me` once on boot and redirects to
   `/login` on 401. It runs in `load`, not in the component, so a signed-out
   visitor gets a redirect and never a frame of the greeting. It's on the
@@ -497,37 +498,79 @@ The entire frontend:
 ```ts
 // web/src/lib/nav.ts
 export const navItems: NavItem[] = [
-  { href: '/', label: 'Home', icon: '●' },
-  { href: '/second', label: 'Second page', icon: '○' }
+  { href: '/', label: 'Home' },
+  { href: '/second', label: 'Second page', group: 'Examples' }
 ];
 ```
 
 Nothing else holds a copy of the route list. The desktop sidebar, the phone
-bottom bar, and `web/tests/nav.spec.ts` all read that array, so a destination
-that renders in one place renders in all of them and the test extends itself
-when you add one.
+drawer, and `web/tests/nav.spec.ts` all read that array, so a destination that
+renders in one place renders in all of them and the test extends itself when you
+add one. The test asserts the rendered links are *exactly* `navItems`, not
+merely that each one is present, so a link hardcoded into the shell - the thing
+"one entry in one array" is a promise against - fails the build.
 
-The two layouts are one component (`AppShell.svelte`) with both in the DOM at
-every width, and Tailwind's `lg:` breakpoint deciding which is displayed. Both
-carry `aria-label="Primary"`, which is safe precisely because the hidden one is
-`display: none` and therefore out of the accessibility tree - the E2E suite
-asserts that a lookup for a primary nav resolves to exactly one element at each
-width, which is the claim that matters, and then measures the geometry to say
-*which* one rather than sniffing for the classes that put it there.
+**`group` is a property of the entry, not a nested array.** A `NavGroup[]` reads
+better in isolation and makes the wrong thing true: a group would have to exist
+before a page could, and the rule stops being "one entry in one array" and
+becomes "one entry in one array, inside the right group, and create the group if
+it isn't there." `navSections()` walks the flat list once and starts a section
+whenever `group` changes. The cost is real and small: two runs of the same label
+separated by something else render as two headings rather than merging, and a
+typo makes a new group rather than an error. Both are visible immediately in the
+sidebar.
+
+Headings are `<h2>`, labelling the `<ul>` beneath them, and they are **not
+links and not collapsible.** A collapsible group hides destinations behind a
+click, which is the same failure the no-overflow-menu decision below avoids, and
+it needs state that has to persist across navigations to not be infuriating.
+
+Both layouts are one component (`AppShell.svelte`), and both navs carry
+`aria-label="Primary"` - safe because they are never exposed at once. The
+sidebar is `display: none` below `lg`; the drawer renders *nothing at all* until
+it opens, which also keeps a second copy of the footer out of the DOM, so
+`auth.spec.ts` can keep reaching for one email and one form without scoping.
 
 `isCurrent` is prefix matching, not the exact match you reach for first, so
 `/notes/123` still marks a `/notes` destination; `/` is special-cased because
 it's a prefix of everything. That is not nested navigation - the shell renders
 exactly one flat level and a section's children are the section's problem.
 
-The bottom bar has **no overflow menu and no slot count.** Items are `flex-1
-min-w-0` with a truncating label, so N destinations are N equal columns and
-nothing is ever off screen or behind a "More" button. Past about six the labels
-start truncating and it gets ugly - that is the supported behaviour, not a bug
-to fix with a dropdown. A "More" menu is roughly sixty lines (outside-pointerdown
-listener, Escape handling, focus return) plus a per-destination decision about
-whether it earns a slot, which is a second thing to get right every time you add
-a page. If an app genuinely outgrows a flat bar it has outgrown this shell.
+**The phone nav is a drawer, and it is a native `<dialog>`.** An earlier cut of
+this shell used a bottom bar with `flex-1` items and no overflow menu; it worked,
+and it also meant every destination competed for a share of 390px, so the honest
+answer past about six was truncated labels. A drawer scrolls instead, which
+costs nothing and stops the destination count from being a design constraint.
+
+`<dialog>` + `showModal()` because Escape, the backdrop, the focus trap, focus
+restoration, and inerting the page behind it are all native. The hand-rolled
+equivalent is roughly sixty lines of listener plumbing and is where this kind of
+component usually goes wrong. Two things it doesn't do: it doesn't close on
+client-side navigation, so the shell closes it in `afterNavigate` **and** on
+link click (tapping the link for the page you're already on may not navigate at
+all); and it isn't hidden at `lg`, on purpose - hiding an *open* modal, which is
+what rotating a tablet past the breakpoint would do, leaves an invisible thing
+holding focus. Left visible it's a drawer you can see and dismiss, and the only
+way to open it is a button `lg:hidden` has already taken away.
+
+`showModal()` is Safari 15.4+ (March 2022), which is the floor this shell
+assumes. Below it the drawer would render inline instead of as a modal - it is
+the one part of this change I have not been able to exercise on a real iOS
+device.
+
+There are **no icons** in the nav. A glyph per entry is a second decision per
+entry and a second thing to keep consistent; in a labelled vertical list it adds
+nothing a screen reader or a person needs. Removing them deleted a field.
+
+The sidebar is `sticky top-0 h-screen`, so a long page scrolls under it rather
+than scrolling it away, with the nav column scrolling on its own and the footer
+pinned to the bottom of the viewport.
+
+**The footer is the shell's, not the page's.** It carries the signed-in email,
+the theme picker, and **Log out**, bottom-left in both the sidebar and the
+drawer. Sign-out is something every signed-in app needs and no page should have
+to build, and it was the last thing keeping identity on `/`. The button owns its
+own failure state (`SignOutButton.svelte`), so the shell stays layout.
 
 The app name comes from `manifest.webmanifest`, read at build time
 (`web/src/lib/app.ts`), not from a string literal in a component. The manifest
@@ -535,15 +578,16 @@ is already the canonical name - `make init` rewrites it along with everything
 else - and a literal in the shell would be a second place to forget.
 
 **What the shell deliberately doesn't have:** nested or collapsible navigation,
-breadcrumbs, a settings or account screen, a per-item "show this in the bottom
-bar" flag, and any notion of a page header beyond whatever `<h1>` the page
-writes itself. Each of those is a real feature some app wants and no template
+breadcrumbs, a settings or account screen, per-item icons, a per-item "show this
+on a phone" flag, and any notion of a page header beyond whatever `<h1>` the
+page writes itself. Each of those is a real feature some app wants and no template
 can guess at.
 
 **`/second` is a demo destination and is meant to be deleted.** A shell with one
 destination doesn't demonstrate anything - you can't see the current-page marker
-move, and the bottom bar can't show that it divides evenly. It's a heading and a
-paragraph explaining itself, so deleting it is deleting one file plus one line
+move, and there's nothing for a group heading to sit above. It carries the one
+`group` in the template for that reason. It's a heading and a paragraph
+explaining itself, so deleting it is deleting one file plus one line
 of `navItems`.
 
 **Which refusals you actually see depends on `ALLOW_OPEN_REGISTRATION`, and an
@@ -559,10 +603,11 @@ gets, so it pins 403 and 401 and can't observe 409. `internal/app/api_test.go`
 covers 409 instead, opening the gate in-process against a real database - much
 cheaper than standing up a second binary and database just to see one string.
 
-**Logout can fail, and the page has to let it.** The foundation returns 500 and
-sends no clearing `Set-Cookie` when it couldn't revoke the session server-side,
-rather than clearing the cookie and pretending a live token is dead. So `/` must
-not clear its local auth state on a failed logout either - otherwise the button
+**Logout can fail, and the button has to let it.** The foundation returns 500
+and sends no clearing `Set-Cookie` when it couldn't revoke the session
+server-side, rather than clearing the cookie and pretending a live token is
+dead. So `SignOutButton` must not clear its local auth state on a failed logout
+either - otherwise the button
 looks like it worked while the cookie still signs you in on the next visit.
 
 That is the whole list. No file upload demo, no API token screen, no push

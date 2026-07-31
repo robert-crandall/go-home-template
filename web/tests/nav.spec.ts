@@ -1,23 +1,19 @@
 import { expect, test, type Page } from '@playwright/test';
-import { navItems } from '../src/lib/nav';
+import { navItems, navSections } from '../src/lib/nav';
 
 /**
  * The navigation shell, against the real binary.
  *
  * Everything here is driven off `navItems`, so this file has no opinion about
- * what the destinations are: delete `/second`, add `/notes`, reorder them - the
- * suite follows. That matters more than usual because the README tells you to
- * delete `/second`, and a test that named it would turn following the README
- * into a red build.
+ * what the destinations are: delete `/second`, add `/notes`, reorder them, drop
+ * the one group - the suite follows. That matters more than usual because the
+ * README tells you to delete `/second`, and a test that named it would turn
+ * following the README into a red build.
  *
  * The nav is looked up as `getByRole('navigation', { name: 'Primary' })`, which
- * is the assertion rather than a convenience. Both the sidebar and the bottom
- * bar are in the DOM at every width and both carry that name; whichever one is
- * `display: none` is out of the accessibility tree, so a lookup that resolves
- * to exactly one element is direct evidence that a screen reader is offered one
- * primary nav and not two. Which one it resolved to is then measured
- * geometrically - a column down the left, or a strip across the bottom - rather
- * than by sniffing for the classes that put it there.
+ * is the assertion rather than a convenience. The sidebar and the drawer both
+ * carry that name, and a lookup that resolves to exactly one element is direct
+ * evidence that a screen reader is offered one primary nav and not two.
  */
 
 // The account `auth.spec.ts` registers. Registration is first-user-only in the
@@ -33,10 +29,12 @@ const PHONE = { width: 390, height: 844 };
 // prefix of everything, so `isCurrent` special-cases it, which makes any other
 // entry the interesting one for both history and deep links.
 const elsewhere = navItems.find((item) => item.href !== '/');
+const grouped = navSections().filter((section) => section.label !== undefined);
 
 const primaryNav = (page: Page) => page.getByRole('navigation', { name: 'Primary' });
 const destination = (page: Page, label: string) =>
   primaryNav(page).getByRole('link', { name: label, exact: true });
+const menuButton = (page: Page) => page.getByRole('button', { name: 'Menu' });
 
 /**
  * The requests go through the browser's own `fetch`, from a page already on the
@@ -80,27 +78,26 @@ async function onlyCurrent(page: Page, href: string) {
 }
 
 /**
- * Click through every destination in whichever nav is showing, and check the
- * marker lands on it and nowhere else. This is what makes "adding a destination
- * is one line" true rather than aspirational - a new entry in `navItems` is
- * clicked here the moment it exists, at both widths.
+ * The exposed nav offers `navItems` and nothing else. The count is the half
+ * that matters: without it a link hardcoded into `AppShell.svelte` - the exact
+ * thing "one entry in one array" is a promise against - would go unnoticed,
+ * because every entry it looked for would still be there.
  */
-async function visitEveryDestination(page: Page) {
-  expect(navItems, 'the shell has no destinations, so this test proves nothing').not.toHaveLength(
-    0
-  );
+async function offersExactly(page: Page) {
   await expect(primaryNav(page), 'exactly one primary nav should be exposed').toHaveCount(1);
+  await expect(primaryNav(page).getByRole('link')).toHaveCount(navItems.length);
 
   for (const item of navItems) {
-    await destination(page, item.label).click();
-    await expect(page).toHaveURL(item.href);
-    await onlyCurrent(page, item.href);
+    await expect(destination(page, item.label)).toHaveAttribute('href', item.href);
   }
 }
 
 test('the shell puts one primary nav on screen, and every destination is reachable in it', async ({
   page
 }) => {
+  expect(navItems, 'the shell has no destinations, so this test proves nothing').not.toHaveLength(
+    0
+  );
   await signIn(page);
 
   await test.step('on desktop the nav is a column down the left', async () => {
@@ -113,24 +110,50 @@ test('the shell puts one primary nav on screen, and every destination is reachab
       DESKTOP.width / 2
     );
 
-    await visitEveryDestination(page);
+    await offersExactly(page);
+    await expect(menuButton(page), 'desktop should not offer the drawer').toHaveCount(0);
+
+    for (const item of navItems) {
+      await destination(page, item.label).click();
+      await expect(page).toHaveURL(item.href);
+      await onlyCurrent(page, item.href);
+    }
   });
 
-  await test.step('on a phone it is a bar across the bottom, with the same destinations', async () => {
+  await test.step('on a phone the same destinations are behind the menu', async () => {
     await page.setViewportSize(PHONE);
     await page.goto('/');
 
-    const box = await primaryNav(page).boundingBox();
-    expect(box, 'the primary nav is not laid out').not.toBeNull();
-    expect(box!.width, 'the phone nav should span the width').toBeGreaterThanOrEqual(
-      PHONE.width - 1
-    );
-    expect(box!.y + box!.height, 'the phone nav should sit at the bottom').toBeGreaterThan(
-      PHONE.height - 2
-    );
+    await expect(primaryNav(page), 'the nav should be closed until asked for').toHaveCount(0);
 
-    await visitEveryDestination(page);
+    for (const item of navItems) {
+      // Per destination, not once: navigating closes the drawer, which is the
+      // behaviour the assertion at the end of the loop is there to hold onto.
+      await menuButton(page).click();
+      await offersExactly(page);
+      await onlyCurrent(page, new URL(page.url()).pathname);
+
+      await destination(page, item.label).click();
+      await expect(page).toHaveURL(item.href);
+      await expect(primaryNav(page), 'the drawer should close behind you').toHaveCount(0);
+    }
   });
+});
+
+test('a group renders as a heading, not as a destination', async ({ page }) => {
+  test.skip(grouped.length === 0, 'no nav entry carries a group');
+
+  await signIn(page);
+  await page.setViewportSize(DESKTOP);
+  await page.goto('/');
+
+  for (const section of grouped) {
+    const heading = page.getByRole('heading', { name: section.label!, exact: true });
+    await expect(heading).toBeVisible();
+    // A section header is a label for the destinations under it, so it must not
+    // look like one of them.
+    await expect(page.getByRole('link', { name: section.label!, exact: true })).toHaveCount(0);
+  }
 });
 
 test('history and deep links keep the marker honest', async ({ page }) => {
