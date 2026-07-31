@@ -440,13 +440,16 @@ The entire frontend:
   control is three-way rather than a toggle.
 - A route guard that calls `GET /api/auth/me` once on boot and redirects to
   `/login` on 401. It runs in `load`, not in the component, so a signed-out
-  visitor gets a redirect and never a frame of the greeting. Known limitation:
-  on a browser Back or Forward, SvelteKit runs the guard and renders the right
-  page but leaves the address bar on the entry you navigated to, so the URL and
-  the content disagree. It leaks nothing - the content always matches the auth
-  state - and a reload fixes it, but it is a bug; tracked in #18. The E2E suite
-  therefore asserts the guard's *content* across history navigation, not its
-  URL, and the fix for #18 is what earns the tighter assertion.
+  visitor gets a redirect and never a frame of the greeting.
+- One correction on top of that guard, in `+layout.svelte`. SvelteKit only
+  writes the history entry for navigations it pushed itself, so a `load` that
+  redirects during a Back or Forward rendered the right page and left the
+  address bar on the entry you popped to - the greeting under `/login`, the
+  login form under `/` (#18). An `afterNavigate` that compares `page.url` to
+  `location.href` and calls `$app/navigation`'s `replaceState` when they
+  disagree puts the bar back. The E2E suite asserts both the content and the
+  URL across history navigation in both directions; drop that hook and both
+  assertions fail.
 
 **Which refusals you actually see depends on `ALLOW_OPEN_REGISTRATION`, and an
 earlier draft of this decision got that wrong.** It listed "409 when the email is
