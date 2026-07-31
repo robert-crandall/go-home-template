@@ -449,10 +449,12 @@ It does **not** ship a service worker: SvelteKit auto-registers
 `src/service-worker.ts` in production builds, so a half-considered one is an
 asset-caching bug waiting to happen in every app that forgets it's there. See
 "Deliberately not here" for the web push consequence. What that costs is offline
-support and asset caching, not installability - Chrome dropped the service
-worker requirement for install, and `Page.getAppManifest` reports no errors for
-what ships here. The app just never asks to be installed, which is the browser's
-job to offer anyway.
+support, asset caching, and the *automatic* install prompt. Installing still
+works: Chrome dropped the fetch-handler requirement for installing from the
+menu (v108 mobile, v112 desktop), and `Page.getAppManifest` reports no errors
+for what ships here. What still requires a `fetch()` handler is the heuristic
+that offers the prompt unasked - so the app is installable, it just never asks.
+See [Chrome's post on the criteria change](https://developer.chrome.com/blog/update-install-criteria).
 
 ### D7 - One binary, no reverse proxy in the container
 

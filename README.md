@@ -123,10 +123,11 @@ sensibly tinted title bar. Regenerate the PNGs from `icon.svg` if you change the
 artwork - the `rsvg-convert` command is in a comment at the top of that file.
 
 There's deliberately no service worker, so there's no offline support and no
-asset caching. Browsers may still offer to install the app - that's their call,
-based on the manifest and whether you're on HTTPS - but nothing here prompts for
-it. See D6 in [`docs/tech-stack.md`](docs/tech-stack.md) for why the service
-worker is the piece left out.
+asset caching. The app is still installable from the browser menu - Chrome
+dropped the fetch-handler requirement for that - but nothing will offer to
+install it unprompted, because that heuristic does still want a service worker.
+See D6 in [`docs/tech-stack.md`](docs/tech-stack.md) for why the service worker
+is the piece left out.
 
 ## Testing
 
