@@ -113,8 +113,11 @@ test('a chosen theme applies before the app boots, and survives reload, restart,
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     // Compared against the value recorded above rather than a literal: daisyUI
     // emits oklch(), and how a browser serializes that is not this suite's
-    // business.
-    expect(await bodyBackground(page)).toBe(dark);
+    // business. toHaveCSS rather than a one-shot getComputedStyle read because
+    // domcontentloaded doesn't wait on stylesheets, so a slow CSS response
+    // would otherwise be measured as the wrong background instead of as a
+    // not-yet-arrived one.
+    await expect(page.locator('body')).toHaveCSS('background-color', dark);
 
     await page.unroute('**/*.js');
   });
