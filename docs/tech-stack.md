@@ -1564,6 +1564,12 @@ homelab template gets wrong by omission more often than by design:
   endpoints*. Your own tables and handlers still have to do their own per-user
   authorization; nothing enforces that for you.
 - **Rate limiting, a WAF, security headers middleware.** See the threat model.
+- **Watchtower configuration, hardening, or troubleshooting.** Watchtower is the
+  paved path for automatic image updates on the host - apps built from this
+  template use it, and D9 and the README document the one interface point this
+  template owns (the optional webhook from `promote`). Watchtower's own
+  configuration, upgrade path, credential handling, poll intervals, and security
+  posture are out of scope here. The Watchtower project documents those.
 
 ## Threat model
 
