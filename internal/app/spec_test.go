@@ -56,6 +56,8 @@ func TestSpecDescribesTheContract(t *testing.T) {
 		{"/api/auth/login", "post", []string{"401"}},
 		{"/api/auth/logout", "post", nil},
 		{"/api/auth/me", "get", []string{"401"}},
+		{"/api/auth/google/start", "get", nil},
+		{"/api/auth/google/callback", "get", []string{"500"}},
 		{"/api/files", "get", nil},
 		{"/api/files", "post", nil},
 		{"/api/files/{id}", "get", nil},

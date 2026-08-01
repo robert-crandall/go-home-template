@@ -114,6 +114,13 @@ test('register, stay signed in across reloads, log out, and log back in', async 
     expect(await greetingEverRendered(page), 'the guarded page rendered before redirecting').toBe(
       false
     );
+
+    // No Google client is configured for this server, so /api/auth/google/start
+    // isn't mounted and the button must not be there - it would navigate the
+    // browser to the JSON 404 the server gives every unknown /api path. The
+    // signed-in half can't be tested here: there is no way to complete a real
+    // Google consent screen from a test.
+    await expect(page.getByRole('link', { name: 'Sign in with Google' })).toHaveCount(0);
   });
 
   await test.step('registering the first account signs you in', async () => {

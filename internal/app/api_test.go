@@ -76,7 +76,9 @@ func TestAuthRefusalStrings(t *testing.T) {
 			Middlewares: []func(http.Handler) http.Handler{authSvc.Middleware},
 			HumaConfig:  authSvc.TokenHumaConfig,
 		})
-		app.RegisterRoutes(srv.API, app.Deps{Auth: authSvc, Notify: notifySvc, Files: filesSvc})
+		if err := app.RegisterRoutes(srv.API, app.Deps{Auth: authSvc, Notify: notifySvc, Files: filesSvc}); err != nil {
+			t.Fatalf("register routes: %v", err)
+		}
 
 		ts := httptest.NewServer(srv.Router)
 		t.Cleanup(ts.Close)

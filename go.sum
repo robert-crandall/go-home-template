@@ -47,6 +47,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/robert-crandall/go-home-server v0.1.6 h1:IN9fFluMihqsAYBYAi/gvKhkObQdDsFD3kMjWnC+MRE=
 github.com/robert-crandall/go-home-server v0.1.6/go.mod h1:BC1z11VdayzUx4dccSR1LYzpPGgbHTYXtQBigbzMOco=
+github.com/robert-crandall/go-home-server v0.1.7 h1:Pxd6/q+TSy8KGFtXWYUkvb+QJznzzt1v1bFJXCRylog=
+github.com/robert-crandall/go-home-server v0.1.7/go.mod h1:Mu1A+6N0F9Sw7cMcSWzojfrxyq5A5q5JHRgHjFcQqZs=
 github.com/segmentio/asm v1.2.1 h1:DTNbBqs57ioxAD4PrArqftgypG4/qNpXoJx8TVXxPR0=
 github.com/segmentio/asm v1.2.1/go.mod h1:BqMnlJP91P8d+4ibuonYZw9mfnzI9HfxselHZr5aAcs=
 github.com/segmentio/encoding v0.5.4 h1:OW1VRern8Nw6ITAtwSZ7Idrl3MXCFwXHPgqESYfvNt0=
