@@ -200,7 +200,13 @@ test('the framework defaults this app overrides are still overridden', async ({ 
     // on purpose: `:focus-visible` needs keyboard modality, which a text input
     // establishes and a programmatic focus then carries over. Get that wrong
     // and this fails at 2px rather than passing vacuously.
-    const submit = page.getByRole('button', { name: /Log in|Create account/ });
+    //
+    // Scoped to the form because `/login` renders a second button named "Log
+    // in" - the mode switcher - whenever registration is open. It isn't open
+    // here (the `account` project registers first), so an unscoped locator
+    // passes today and would turn into a strict-mode error the moment that
+    // ordering changed. There is one form on this page.
+    const submit = page.locator('form').getByRole('button', { name: /Log in|Create account/ });
     await submit.focus();
     await expect(submit).toHaveCSS('outline-offset', '0px');
   });
