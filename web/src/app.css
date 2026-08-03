@@ -21,3 +21,43 @@
 @plugin "daisyui" {
   themes: light --default, dark --prefersdark;
 }
+
+@theme {
+  /* Tailwind 4's own default `--font-sans` is the Bootstrap-era list, led by
+     `-apple-system, BlinkMacSystemFont` (see node_modules/tailwindcss/theme.css).
+     This is the modern spelling of the same idea, and it is the only token that
+     needs changing: Tailwind sets `--default-font-family` from `--font-sans` and
+     applies it to `html`, so everything inherits it from there.
+
+     It deliberately omits the four emoji families Tailwind appends. On Apple
+     platforms the generic `sans-serif` fallback still resolves emoji; elsewhere
+     that is fontconfig's business. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* One focus ring, not two.
+
+   daisyUI focuses a control with `outline: 2px solid var(--input-color)` at
+   `outline-offset: 2px`, so the ring floats clear of the control's own border
+   and a focused input reads as *two* outlines with a gap between them. Pulling
+   the offset to 0 sits the ring straight on the border, which is what makes it
+   read as a single highlight - the colours already agree, because on focus
+   daisyUI points both the border and the outline at `--input-color`.
+
+   The layer is load-bearing, and so is `:where()`. daisyUI nests its rules as
+   *sublayers* of `utilities` (`@layer utilities { @layer daisyui.l1... }`), and
+   a layer's own content beats its sublayers whatever the specificity - which is
+   how a Tailwind utility overrides a daisyUI component in the first place. So
+   `@layer base` and `@layer components` would both silently lose here, and an
+   unlayered rule would win too *hard*, beating a deliberate
+   `focus:outline-offset-2` on a single control. Directly in `utilities`, at zero
+   specificity, is the one spot that beats daisyUI and still yields to a utility.
+
+   The list is only the controls this app renders. Add to it when you add a
+   control - a `.select` or `.textarea` gets daisyUI's detached ring until you
+   do, and a half-applied focus style is worse than either whole. */
+@layer utilities {
+  :where(.input:focus, .input:focus-within, .btn:focus-visible, .btn:has(:focus-visible)) {
+    outline-offset: 0;
+  }
+}

@@ -1,13 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * Theme switching and the install metadata, against the real binary.
+ * Theme switching, the CSS overrides, and the install metadata, against the
+ * real binary.
  *
- * Two tests. The theme one is a single sequential test, like the auth suite,
+ * Three tests. The theme one is a single sequential test, like the auth suite,
  * because its claims build on each other: a choice made in one step has to
- * survive the reload, restart, and deep link in the ones after it. The metadata
- * one is separate because it shares no state with any of that - it's a handful
- * of independent HTTP assertions plus Chrome's own manifest parser.
+ * survive the reload, restart, and deep link in the ones after it. The other
+ * two are separate because they share no state with any of that - one is a
+ * pair of computed-style reads, the other a handful of independent HTTP
+ * assertions plus Chrome's own manifest parser.
  *
  * Nothing here registers or logs in, so the file shares the database with
  * `auth.spec.ts` without caring what state that leaves behind.
@@ -20,7 +22,7 @@ import { expect, test, type Page } from '@playwright/test';
 // about the app and not a fact about whoever's laptop is running the suite.
 test.use({ colorScheme: 'light' });
 
-const themeSelect = (page: Page) => page.getByLabel('Theme');
+const themeToggle = (page: Page) => page.getByLabel('Theme');
 const documentTheme = (page: Page) =>
   page.evaluate(() => document.documentElement.dataset.theme ?? null);
 const bodyBackground = (page: Page) =>
@@ -54,8 +56,16 @@ test('a chosen theme applies before the app boots, and survives reload, restart,
     await page.emulateMedia({ colorScheme: 'light' });
   });
 
-  await test.step('choosing dark applies it and remembers it', async () => {
-    await themeSelect(page).selectOption('dark');
+  await test.step('the toggle cycles System -> Light -> Dark, and remembers where it stopped', async () => {
+    // The control is a cycling icon button, so Dark is two presses from System
+    // and the accessible name is the only readout of where in the cycle it is.
+    await expect(themeToggle(page)).toHaveAccessibleName('Theme: System. Activate for Light.');
+
+    await themeToggle(page).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect(themeToggle(page)).toHaveAccessibleName('Theme: Light. Activate for Dark.');
+
+    await themeToggle(page).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     expect(await storedTheme(page)).toBe('dark');
 
@@ -66,7 +76,7 @@ test('a chosen theme applies before the app boots, and survives reload, restart,
   await test.step('a reload comes back dark', async () => {
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await expect(themeSelect(page)).toHaveValue('dark');
+    await expect(themeToggle(page)).toHaveAccessibleName('Theme: Dark. Activate for System.');
   });
 
   await test.step('the theme is right with no application JavaScript at all', async () => {
@@ -108,7 +118,7 @@ test('a chosen theme applies before the app boots, and survives reload, restart,
       abortedUrls.filter((url) => url.includes('/_app/immutable/entry/')),
       "the app's entry chunks were not blocked, so this step proved nothing"
     ).not.toHaveLength(0);
-    await expect(themeSelect(page), 'the app mounted, so this is not a no-JS page').toHaveCount(0);
+    await expect(themeToggle(page), 'the app mounted, so this is not a no-JS page').toHaveCount(0);
 
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     // Compared against the value recorded above rather than a literal: daisyUI
@@ -148,14 +158,58 @@ test('a chosen theme applies before the app boots, and survives reload, restart,
     }
   });
 
-  await test.step('going back to System hands the decision to the OS again', async () => {
+  await test.step('one more press wraps back to System and hands the decision to the OS again', async () => {
     await page.goto('/login');
-    await themeSelect(page).selectOption('system');
+    await themeToggle(page).click();
     expect(await documentTheme(page), 'System means no attribute, not an attribute saying "system"').toBe(
       null
     );
     expect(await storedTheme(page)).toBe('system');
     expect(await bodyBackground(page)).toBe(light);
+  });
+});
+
+test('the framework defaults this app overrides are still overridden', async ({ page }) => {
+  // Both of these are cascade facts rather than markup, so nothing in the app
+  // breaks visibly when a daisyUI or Tailwind bump takes one back - which is
+  // exactly why they're asserted here rather than left to a visual check.
+  await page.goto('/login');
+
+  await test.step('a focused control gets one ring, not a detached second one', async () => {
+    // daisyUI focuses with `outline-offset: 2px`, so the ring floats clear of
+    // the control's own border and reads as two outlines. Asserting the offset
+    // is the point: the weaker "a focused input has an outline" passes just as
+    // happily against the default this is here to undo.
+    const email = page.getByLabel('Email');
+    await email.focus();
+    await expect(email).toHaveCSS('outline-offset', '0px');
+
+    // And the ring is the same colour as the border underneath it, which is
+    // what turns the two edges into one. daisyUI already points both at
+    // `--input-color` on focus - this records that it does, because if it ever
+    // stops, offset 0 alone would leave a two-tone edge instead of a fix.
+    const [outline, border] = await email.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return [style.outlineColor, style.borderTopColor];
+    });
+    expect(outline).toBe(border);
+
+    // Buttons go through a different daisyUI rule from inputs (`.btn` sets the
+    // offset on the base class, not on focus), so they get their own assertion
+    // rather than being assumed to follow. Focus moves *from* the email field
+    // on purpose: `:focus-visible` needs keyboard modality, which a text input
+    // establishes and a programmatic focus then carries over. Get that wrong
+    // and this fails at 2px rather than passing vacuously.
+    const submit = page.getByRole('button', { name: /Log in|Create account/ });
+    await submit.focus();
+    await expect(submit).toHaveCSS('outline-offset', '0px');
+  });
+
+  await test.step('the font stack is the one app.css asks for', async () => {
+    // Tailwind's own default `--font-sans` leads with `-apple-system`, so the
+    // first family in the list is what separates our token from the stock one.
+    // `html` rather than `body`: that's where Tailwind applies it.
+    await expect(page.locator('html')).toHaveCSS('font-family', /^ui-sans-serif,/);
   });
 });
 

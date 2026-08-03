@@ -409,7 +409,13 @@ live with no `matchMedia` call anywhere in the app.
 
 A two-state sun/moon toggle would be worse for exactly that reason: it has to
 resolve the OS preference into a stored `light`/`dark` at boot, which both adds
-the `matchMedia` call and *loses* the live following.
+the `matchMedia` call and *loses* the live following. So the control is a
+sun/moon *cycle* instead - one icon button walking System -> Light -> Dark ->
+System, showing the icon of the preference it is currently on (monitor, sun,
+moon). Three states keep the property; only the affordance changed. The cost is
+the standing weakness of any cycling control - the icon says where you are and
+nothing about what pressing it does - so the accessible name carries both
+halves: `Theme: System. Activate for Light.`
 
 The no-flash claim is measured in `web/tests/theme.spec.ts` by aborting every
 `.js` request and asserting the page is still correctly themed - if the theme
@@ -417,6 +423,31 @@ survives with zero application JavaScript, the inline script painted it. The
 step also asserts the abort count is non-zero, because a build change that moved
 the app's code out from under the pattern would otherwise let hydration run and
 quietly turn the proof vacuous.
+
+**Two framework defaults are overridden in `web/src/app.css`, and the layer one
+of them sits in is load-bearing.**
+
+`--font-sans` is set to `ui-sans-serif, system-ui, -apple-system, ...`. Tailwind
+4's own default still leads with the Bootstrap-era `-apple-system,
+BlinkMacSystemFont`; this is the modern spelling of the same intent, and it is
+the only token to change, because Tailwind derives `--default-font-family` from
+it and applies that to `html`.
+
+The other is `outline-offset: 0` on focused controls. daisyUI focuses with a
+2px outline at a 2px *offset*, so the ring floats clear of the control's own
+border and a focused input reads as two outlines with a gap between them. Zero
+sits the ring on the border, and since daisyUI already points both the border
+and the outline at `--input-color` on focus, the two edges merge into one.
+
+That override has to go **directly in `@layer utilities`, at zero specificity
+via `:where()`**, and that is not a style preference. daisyUI 5 nests its rules
+as sublayers of `utilities` (`@layer utilities { @layer daisyui.l1... }`), and a
+layer's own content beats its sublayers whatever the specificity - which is how
+a Tailwind utility overrides a daisyUI component in the first place. `@layer
+base` and `@layer components` would both silently lose; an *unlayered* rule
+would win too hard, beating a deliberate `focus:outline-offset-2` on a single
+control. Both facts are asserted as computed styles in `theme.spec.ts`, because
+neither breaks loudly.
 
 **Why daisyUI:** it gives semantic component classes (`btn`, `card`, `input`,
 `navbar`) and a real theme system on top of Tailwind, so a template app looks
@@ -483,9 +514,9 @@ The entire frontend:
 - `/second` - guarded, and deliberately empty. It exists so the shell has
   somewhere to navigate *to*; see below.
 - A theme picker, so it's on every screen and a signed-out visitor can use it
-  too. System / Light / Dark, in a `<select>` - see D5 for why the control is
-  three-way rather than a toggle. It lives in the shell's footer, bottom-left,
-  and `/login` places its own copy since it has no shell.
+  too. One icon button cycling System / Light / Dark - see D5 for why the
+  control is three-way rather than a two-state toggle. It lives in the shell's
+  footer, bottom-left, and `/login` places its own copy since it has no shell.
 - A route guard that calls `GET /api/auth/me` once on boot and redirects to
   `/login` on 401. It runs in `load`, not in the component, so a signed-out
   visitor gets a redirect and never a frame of the greeting. It's on the
