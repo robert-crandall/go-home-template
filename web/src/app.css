@@ -56,9 +56,10 @@
    `:where()` also takes a *forgiving* selector list, which is what makes the
    `:has()` entry safe to keep in the same list: a parser that doesn't support
    `:has()` drops that one selector and keeps the rest, where a plain selector
-   list would drop the whole rule. Measured in the suite's own Chromium: the
-   same unsupported selector left a `:where()` list applying and killed an
-   unwrapped one outright.
+   list would drop the whole rule. Measured in the suite's own Chromium with a
+   fake pseudo-class standing in for the unsupported one, since Chromium does
+   support `:has()`: inside `:where()` the valid siblings still applied, and the
+   same selector list without the wrapper was dropped outright.
 
    The list is only the controls this app renders. Add to it when you add a
    control - a `.select` or `.textarea` gets daisyUI's detached ring until you
