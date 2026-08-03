@@ -53,6 +53,13 @@
    `focus:outline-offset-2` on a single control. Directly in `utilities`, at zero
    specificity, is the one spot that beats daisyUI and still yields to a utility.
 
+   `:where()` also takes a *forgiving* selector list, which is what makes the
+   `:has()` entry safe to keep in the same list: a parser that doesn't support
+   `:has()` drops that one selector and keeps the rest, where a plain selector
+   list would drop the whole rule. Measured in the suite's own Chromium: the
+   same unsupported selector left a `:where()` list applying and killed an
+   unwrapped one outright.
+
    The list is only the controls this app renders. Add to it when you add a
    control - a `.select` or `.textarea` gets daisyUI's detached ring until you
    do, and a half-applied focus style is worse than either whole. */
