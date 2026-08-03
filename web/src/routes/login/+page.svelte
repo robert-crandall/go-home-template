@@ -63,7 +63,7 @@
   shell, so there is no chrome to hang the picker off. A signed-out visitor gets
   to pick a theme too.
 
-  The wrapper is `fixed` with no width, so it shrinks to the select and covers
+  The wrapper is `fixed` with no width, so it shrinks to the button and covers
   nothing else - the auth suite clicks a centred form right underneath it, which
   is what keeps that honest.
 -->
