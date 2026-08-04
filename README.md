@@ -124,10 +124,9 @@ this file; the file takes precedence over a local `.env`. The config path is
 
 The main module's basename controls the MCP handshake name, installed binary,
 and config filename together. `make init` changes all three, which is why it
-belongs before MCP setup. If you run that first
-rename after configuring MCP, move the config to the new `<app>.json`, rerun
-`make install-mcp`, and remove the old binary; init never edits files under your
-home directory.
+belongs before MCP setup. If you rename after configuring MCP, move the config
+to the new `<app>.json`, rerun `make install-mcp`, and remove the old binary;
+init never edits files under your home directory.
 
 With the app running and the token valid, the shell mode proves the harness is
 live:
