@@ -337,10 +337,10 @@ so **System** means no attribute and lets CSS decide, which is both flash-proof
 by construction and keeps following the OS live. Adding a fourth theme means
 four edits, and the fourth is easy to miss: the `themes:` list in
 `web/src/app.css`, the `Theme` union and the values `read()` accepts in
-`web/src/lib/theme.svelte.ts`, the `options` array in
-`web/src/lib/components/ThemePicker.svelte`, **and the inline script's own
-whitelist in `web/src/app.html`** - it can't import the TypeScript, so it
-repeats the valid values by hand.
+`web/src/lib/theme.svelte.ts`, the `order` and `labels` values plus the icon
+branch in `web/src/lib/components/ThemePicker.svelte`, **and the inline
+script's own whitelist in `web/src/app.html`** - it can't import the
+TypeScript, so it repeats the valid values by hand.
 
 `web/static/` carries `manifest.webmanifest` and two PNG icons, plus a
 `theme-color` meta pair, so a home-screen shortcut gets a real icon and a

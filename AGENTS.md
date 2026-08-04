@@ -129,11 +129,18 @@ These are the things that waste an hour.
   `TEST_DATABASE_URL=postgres://localhost:5432/go-home-template_test?sslmode=disable go test ./internal/app/ -run TestAuthRefusalStrings`
 - **Adding a theme is four edits and the fourth is easy to miss**: the `themes:`
   list in `web/src/app.css`, the `Theme` union and `read()` in
-  `web/src/lib/theme.svelte.ts`, `options` in
+  `web/src/lib/theme.svelte.ts`, `order` and `labels` (and the icon) in
   `web/src/lib/components/ThemePicker.svelte`, **and** the inline script's own
   whitelist in `web/src/app.html`, which cannot import the TypeScript. Related:
   `data-theme` is set only for an explicit light/dark choice - System means *no
   attribute*, so CSS decides at first paint.
+- **`web/src/app.css` overrides two framework defaults, and both are cascade
+  facts a dependency bump can quietly take back** - `--font-sans`, and the
+  `outline-offset: 0` that stops a focused control showing two rings. The latter
+  has to live directly in `@layer utilities` at zero specificity: daisyUI nests
+  its rules as *sublayers* of `utilities`, so `base` and `components` lose to it,
+  while unlayered would win hard enough to beat a deliberate utility class.
+  `web/tests/theme.spec.ts` asserts the computed values.
 - **Hidden markup still breaks browser specs.** Playwright's `getByRole` skips
   hidden nodes, but `getByText` and `locator()` do not, so leaving a closed
   drawer's markup in the DOM can fail an unrelated spec. Render it only when
