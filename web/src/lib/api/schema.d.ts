@@ -106,7 +106,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update the current user */
+        patch: operations["update-current-user"];
         trace?: never;
     };
     "/api/auth/register": {
@@ -429,6 +430,16 @@ export interface components {
             /** Format: int64 */
             size: number;
         };
+        ProfileInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/ProfileInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Display name; empty clears it */
+            name: string;
+        };
         "Push-unsubscribeRequest": {
             /**
              * Format: uri
@@ -447,6 +458,23 @@ export interface components {
             readonly $schema?: string;
             enabled: boolean;
             publicKey: string;
+        };
+        Registration: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/schemas/Registration.json
+             */
+            readonly $schema?: string;
+            /**
+             * Format: email
+             * @description Email address
+             */
+            email: string;
+            /** @description Display name (optional) */
+            name?: string;
+            /** @description Password (8-72 chars) */
+            password: string;
         };
         Subscription: {
             /**
@@ -474,6 +502,7 @@ export interface components {
             email: string;
             /** Format: int64 */
             id: number;
+            name: string;
         };
     };
     responses: never;
@@ -715,6 +744,66 @@ export interface operations {
             };
         };
     };
+    "update-current-user": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
     register: {
         parameters: {
             query?: never;
@@ -724,7 +813,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["Credentials"];
+                "application/json": components["schemas"]["Registration"];
             };
         };
         responses: {

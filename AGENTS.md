@@ -44,6 +44,9 @@ times are measured on a warm cache and nothing here is slow.
 | `make check` | `svelte-check` over the frontend | ~3s |
 | `make spec` | regenerate the API contract - **commit both outputs** | ~3s |
 | `make e2e` | Playwright + real Chromium against the real binary | ~9s |
+| `make install-mcp` | install the module-named MCP binary into `~/bin` | ~1s |
+| `make mcp-token` | mint an MCP token and write its app config | ~1s |
+| `make mcp-config` | print the MCP client `mcpServers` JSON | <1s |
 | `make dev` | Vite on `:5173` proxying to the Go API on `:8080` | - |
 | `go vet ./...` | CI runs this; `make` has no target for it | - |
 

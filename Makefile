@@ -7,7 +7,7 @@ APP_MODULE ?= github.com/robert-crandall/go-home-template
 APP_NAME   ?= Go Home Template
 APP_SLUG   ?= go-home-template
 
-.PHONY: help init setup build install-mcp run dev test check spec e2e docker-smoke clean
+.PHONY: help init setup build install-mcp mcp-token mcp-config run dev test check spec e2e docker-smoke clean
 
 # So a frontend build that fails halfway doesn't leave an index.html behind that
 # makes the target below look satisfied.
@@ -40,6 +40,20 @@ install-mcp: ## Build and install the MCP server into ~/bin
 	mkdir -p "$(HOME)/bin"; \
 	go build -o "$$path" ./cmd/mcp; \
 	echo "installed $$path"
+
+mcp-token: ## Mint an MCP API token and write its app config
+	@set -e; \
+	module="$$(go list -m -f '{{.Path}}')"; \
+	name="$$(printf '%s\n' "$$module" | sed -E 's#/v([2-9]|[1-9][0-9]+)$$##; s#^.*/##')"; \
+	go run github.com/robert-crandall/go-home-server/cmd/token@$(shell go list -m -f '{{.Version}}' github.com/robert-crandall/go-home-server) \
+		-config "$$name" -name "$$name-mcp"
+
+mcp-config: ## Print the MCP client configuration
+	@set -e; \
+	module="$$(go list -m -f '{{.Path}}')"; \
+	name="$$(printf '%s\n' "$$module" | sed -E 's#/v([2-9]|[1-9][0-9]+)$$##; s#^.*/##')"; \
+	printf '{\n  "mcpServers": {\n    "%s": { "command": "%s/bin/%s-mcp", "args": ["serve"] }\n  }\n}\n' \
+		"$$name" "$(HOME)" "$$name"
 
 run: ## Run the built binary
 	./bin/$(APP_SLUG)

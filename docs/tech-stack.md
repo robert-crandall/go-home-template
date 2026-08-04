@@ -58,7 +58,7 @@ graph TD
 
 | Layer | Choice | Version at time of writing |
 |---|---|---|
-| Backend foundation | `go-home-server` | >= v0.1.7 |
+| Backend foundation | `go-home-server` | >= v0.1.9 |
 | Language | Go | 1.26 |
 | HTTP | chi + huma (from the foundation) | - |
 | Database | Postgres, one instance | >= 14; CI tests on 18 |
@@ -87,7 +87,7 @@ thumbnails, web push, graceful shutdown, `/healthz`) comes in as a dependency.
 every app picks it up with `go get -u`. Vendoring the source into the template
 would break that on day one.
 
-**Minimum version: v0.1.7.** See "Foundation version" at the end.
+**Minimum version: v0.1.9.** See "Foundation version" at the end.
 
 **Consequence:** the template must not reimplement anything the foundation
 offers. If a template app needs different auth behavior, the fix goes upstream.
@@ -1475,7 +1475,8 @@ rather than by writing plumbing. API tokens are the one exception - they're on,
 which means `/api/tokens` exists on a fresh app:
 
 - **API tokens** - on, because the MCP server needs them and they cost nothing
-  when unused. No UI (D6); mint one with `curl`. Since v0.1.4 this is a pair:
+  when unused. No UI (D6); mint one with `make mcp-token`. Since v0.1.4 this is
+  a pair:
   `server.Options{HumaConfig: authSvc.TokenHumaConfig}` at construction, then
   `authSvc.RegisterTokens(api)` at registration. `RegisterTokens` panics if the
   config wasn't applied, which is the right trade - a missing bearer scheme in
@@ -1630,12 +1631,13 @@ Accepted here:
 
 ## Foundation version
 
-**This template requires `go-home-server` v0.1.7 or later.** Not a soft
+**This template requires `go-home-server` v0.1.9 or later.** Not a soft
 preference: `auth.Service.TokenHumaConfig` landed in v0.1.4 and `RegisterTokens`
 panics without it, the `apisec` package landed in v0.1.5,
 `auth.Service.RegistrationOpen` landed in v0.1.6, and
-`auth.Service.RegisterGoogle` landed in v0.1.7 - so the wiring in D3, D6 and
-D11 won't compile or boot against anything earlier.
+`auth.Service.RegisterGoogle` landed in v0.1.7. The `cmd/token` CLI used by
+`make mcp-token` landed in v0.1.9, so the setup path documented by this template
+is unavailable against anything earlier.
 
 That work came out of writing this document's first draft against v0.1.3, which
 turned up ten things that belonged upstream rather than worked around here. What
@@ -1656,6 +1658,11 @@ could have been a Google Identity Services button and a client-side integration
 in this SPA; instead the whole OAuth flow is upstream, ending at the same session
 cookie password login already sets, and the app's share of it is a link plus one
 bool in `GET /api/app` ([#38]).
+
+v0.1.9 keeps MCP token creation upstream too. Its `cmd/token` logs in through
+the public API, creates a token through the session-only endpoint, and writes
+the same config shape `apiclient.FromConfig` reads. The template only supplies
+the module-derived name and the foundation version it already pins.
 
 [#33]: https://github.com/robert-crandall/go-home-server/issues/33
 [#34]: https://github.com/robert-crandall/go-home-server/pull/34
