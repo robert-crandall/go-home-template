@@ -70,24 +70,33 @@ the dev loop misbehaves.
 
 Other targets: `make test` (Go tests), `make check` (frontend type check),
 `make spec` (regenerate the API contract), `make e2e` (browser tests),
-`make install-mcp` (install the MCP server), `make clean`, and `make help`.
+`make install-mcp` (install the MCP server), `make mcp-token` (mint its API
+token), `make mcp-config` (print client configuration), `make clean`, and
+`make help`.
 
 ## MCP server
 
 The template includes a zero-tool MCP server. It is deliberately empty, but it
 already loads an API token, verifies it against the running app, and can speak
-MCP over stdio. Install it with:
+MCP over stdio. Start the app and create an account first; on a fresh database,
+open `/login` and register the first user. Then set up MCP in three steps:
 
 ```sh
 make install-mcp
 # installed /Users/you/bin/my-app-mcp
+
+APP_EMAIL=you@example.com make mcp-token
+# prompts for your password, then writes ~/.config/my-app.json
+
+make mcp-config
+# prints the JSON block to paste into your MCP client's config
 ```
 
 Here and below, `my-app` stands for `<app>`: the last element of the Go module
 path, with a `/vN` suffix dropped. The unrenamed template uses
-`go-home-template`. The target always writes `~/bin/<app>-mcp`. If that
-directory is not on `PATH`, use the absolute path or add it for the current
-shell:
+`go-home-template`. `make install-mcp` writes `~/bin/<app>-mcp`, and
+`make mcp-token` writes the matching app connection config. If `~/bin` is not
+on `PATH`, use the absolute path or add it for the current shell:
 
 ```sh
 export PATH="$HOME/bin:$PATH"
@@ -96,34 +105,15 @@ export PATH="$HOME/bin:$PATH"
 Put that export in your shell profile if you want it on future shells too.
 
 The MCP server uses a personal API token, not the browser's session cookie.
-First log in to the running app (use `/api/auth/register` instead for its first
-account), keeping the session cookie in a temporary jar:
+`make mcp-token` logs in through the public HTTP API, creates a token named
+`<app>-mcp`, and writes the app URL and token to the config with mode `0600`.
+It reads the password from `APP_PASSWORD` when set; otherwise it prompts on the
+terminal with echo disabled. For an app at another origin, set `MCP_APP_URL`:
 
 ```sh
-curl -sS -c /tmp/my-app.cookies \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"your-password"}' \
-  http://localhost:8080/api/auth/login
-
-curl -sS -b /tmp/my-app.cookies \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"mcp"}' \
-  http://localhost:8080/api/tokens
-```
-
-The second response shows the plaintext `token` exactly once. Copy it into the
-MCP config, then remove the cookie jar:
-
-```sh
-mkdir -p "$HOME/.config"
-cat > "$HOME/.config/my-app.json" <<'JSON'
-{
-  "appUrl": "http://localhost:8080",
-  "token": "pat_..."
-}
-JSON
-chmod 600 "$HOME/.config/my-app.json"
-rm /tmp/my-app.cookies
+MCP_APP_URL=https://my-app.example.com \
+  APP_EMAIL=you@example.com \
+  make mcp-token
 ```
 
 `appUrl` is optional and defaults to `http://localhost:8080`. The real
@@ -134,10 +124,9 @@ this file; the file takes precedence over a local `.env`. The config path is
 
 The main module's basename controls the MCP handshake name, installed binary,
 and config filename together. `make init` changes all three, which is why it
-belongs before `make install-mcp` or config creation. If you run that first
-rename after configuring MCP, move the config to the new `<app>.json`, rerun
-`make install-mcp`, and remove the old binary; init never edits files under your
-home directory.
+belongs before MCP setup. If you rename after configuring MCP, move the config
+to the new `<app>.json`, rerun `make install-mcp`, and remove the old binary;
+init never edits files under your home directory.
 
 With the app running and the token valid, the shell mode proves the harness is
 live:
@@ -148,9 +137,12 @@ my-app-mcp list
 ```
 
 No arguments (or `serve`) starts the stdio MCP transport for a desktop client.
-Configure that client with the binary's absolute path because `~` is not
-expanded when a client executes a command. `list` and `call` verify the token
-with `GET /api/auth/me`, so a missing, garbage, or revoked token fails clearly.
+`make mcp-config` prints the `mcpServers` block with the binary's absolute path
+because `~` is not expanded when a client executes a command. It does not write
+the client config: Claude Desktop, Copilot CLI, Cursor, and other clients keep
+that file in different places, and it may already contain other servers.
+`list` and `call` verify the token with `GET /api/auth/me`, so a missing,
+garbage, or revoked token fails clearly.
 Stdio startup loads the config but waits for a tool call before contacting the
 app. Missing config is static and cannot repair itself, so it still stops
 startup. App availability and token validity are transient, and each tool's own
