@@ -6,8 +6,8 @@
 
 <!--
   The one example page, and the only thing behind the guard. It exists to prove
-  a session works end to end - you are signed in, here is who as, here is the
-  way out - and it is meant to be replaced by whatever your app actually is.
+  a session works end to end - you are signed in, here is who you are, here is
+  the way out - and it is meant to be replaced by whatever your app actually is.
 
   Sign-out lives here rather than in a layout on purpose. Chrome that offers it
   on every page would be this template deciding your app has a sidebar or a
