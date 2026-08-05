@@ -29,10 +29,10 @@ export default defineConfig({
     // means the other specs can simply log in.
     { name: 'account', testMatch: /auth\.spec\.ts/, use: { ...devices['Desktop Chrome'] } },
     // `chromium` is the catch-all rather than a second `testMatch`, so a spec
-    // added later lands in it by default. That means `theme.spec.ts` is ordered
-    // after `auth.spec.ts` despite never needing an account - the cost is that
-    // a broken auth run hides a theme regression until the next run, which is
-    // cheaper than a new spec silently belonging to no project at all.
+    // added later lands in it by default. That means `manifest.spec.ts` is
+    // ordered after `auth.spec.ts` despite never needing an account - the cost
+    // is that a broken auth run hides a manifest regression until the next run,
+    // which is cheaper than a new spec silently belonging to no project at all.
     {
       name: 'chromium',
       testIgnore: /auth\.spec\.ts/,

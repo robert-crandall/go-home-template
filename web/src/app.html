@@ -7,62 +7,10 @@
     <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
     <!-- iOS ignores the manifest's icons when you add to home screen. -->
     <link rel="apple-touch-icon" href="%sveltekit.assets%/icon-192.png" />
-    <!--
-      These tint the browser's own chrome, and they follow the OS rather than an
-      in-app override: a `data-theme` attribute can't be expressed in a media
-      query. So picking dark inside a light-mode OS leaves the address bar light.
-      Syncing them properly would mean asking `matchMedia` what "system" resolves
-      to and listening for it to change - the exact machinery this app avoids
-      everywhere else - to fix the colour of something that isn't the app.
-    -->
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1e293b" />
-    <!--
-      Applies a saved theme before the first paint. This has to be a classic
-      inline script in <head>, so it runs while the document is still parsing: a
-      static SPA that waits for its own JavaScript to set the theme paints the
-      default palette for a frame first, and the snap to dark is exactly what
-      people notice. It sits above SvelteKit's injected head content to keep it
-      as early as possible - that ordering is a preference, not the correctness
-      boundary, since the stylesheet below is render-blocking and this script has
-      run before anything paints either way.
-
-      (Don't name that placeholder in prose here. SvelteKit substitutes the first
-      occurrence of the token, so a mention inside this comment swallows the
-      stylesheet link into the comment and leaves the real placeholder below
-      untouched - an unstyled page, from a sentence about styling.)
-
-      Only an explicit choice is written to `data-theme`. With no attribute at
-      all, daisyUI's `--prefersdark` rule - scoped to `:root:not([data-theme])` -
-      decides in pure CSS, which is both flash-proof by construction and live, so
-      a first-time visitor who flips their OS to dark sees it immediately.
-
-      web/tests/theme.spec.ts proves this script does the work, by aborting every
-      external script request and checking the theme is right anyway.
-
-      See web/src/lib/theme.svelte.ts for the other half. The two files
-      duplicate one thing on purpose: the storage key and the set of valid
-      values. This script can't import the TypeScript - it has to run before any
-      module loads, which is the entire point - so **adding a theme means
-      editing the whitelist below as well.** The whitelist itself is earning its
-      place rather than being paranoia: a stale or hand-edited value would
-      otherwise be written straight onto the element, and a `data-theme` daisyUI
-      has never heard of matches no theme rule at all.
-    -->
-    <script>
-      try {
-        const saved = localStorage.getItem('theme');
-        if (saved === 'light' || saved === 'dark') {
-          document.documentElement.dataset.theme = saved;
-        }
-      } catch {
-        // Storage blocked (private mode, cookie settings). System theme it is.
-      }
-    </script>
     <title>Go Home Template</title>
     %sveltekit.head%
   </head>
-  <body data-sveltekit-preload-data="hover" class="bg-base-100 text-base-content">
+  <body data-sveltekit-preload-data="hover">
     <div style="display: contents">%sveltekit.body%</div>
   </body>
 </html>

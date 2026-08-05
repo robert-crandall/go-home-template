@@ -3,7 +3,6 @@
   import { api } from '$lib/api/client';
   import { apiErrorMessage } from '$lib/api/errors';
   import { auth } from '$lib/auth.svelte';
-  import ThemePicker from '$lib/components/ThemePicker.svelte';
 
   let { data } = $props();
 
@@ -59,119 +58,105 @@
 </script>
 
 <!--
-  Fixed rather than in a header bar: this page is a full-height hero outside the
-  shell, so there is no chrome to hang the picker off. A signed-out visitor gets
-  to pick a theme too.
-
-  The wrapper is `fixed` with no width, so it shrinks to the button and covers
-  nothing else - the auth suite clicks a centred form right underneath it, which
-  is what keeps that honest.
+  Semantic markup and the structural classes Tailwind's preflight takes away -
+  it resets every border to zero width and every form control to a transparent
+  background, so with no classes at all this page is a set of invisible boxes.
+  Nothing here picks a colour, a font or a layout beyond centring the form:
+  restyle it, or throw it away and write your own.
 -->
-<div class="fixed top-3 right-3 z-10">
-  <ThemePicker />
-</div>
+<main class="mx-auto max-w-sm p-6">
+  <!--
+    Only when registration is open. Closed is the steady state for a
+    single-account app, and a Register control that can only ever produce
+    "registration is closed" is a dead end - see the load function.
 
-<main class="hero min-h-screen">
-  <div class="hero-content w-full max-w-sm">
-    <div class="card w-full bg-base-200 shadow-xl">
-      <div class="card-body">
-        <!--
-          Only when registration is open. Closed is the steady state for a
-          single-account app, and a Register control that can only ever produce
-          "registration is closed" is a dead end - see the load function.
+    It stays a pair rather than becoming "the register form" because
+    ALLOW_OPEN_REGISTRATION=true holds this open forever, and an app in that
+    mode still needs a way to log in. One bool can't tell "open because there's
+    no account yet" from "open because it's configured that way", and it doesn't
+    need to: defaulting to Register while leaving Log in reachable is right for
+    both.
 
-          It stays a pair rather than becoming "the register form" because
-          ALLOW_OPEN_REGISTRATION=true holds this open forever, and an app in
-          that mode still needs a way to log in. One bool can't tell "open
-          because there's no account yet" from "open because it's configured
-          that way", and it doesn't need to: defaulting to Register while
-          leaving Log in reachable is right for both.
-
-          These look like daisyUI tabs but they are not tabs: there is one form
-          below, not a panel per tab. Real tab roles would promise arrow-key
-          navigation and aria-controls that do not exist here, which is worse
-          for a screen reader than no ARIA at all. Two buttons, aria-pressed.
-        -->
-        {#if data.registrationOpen}
-          <div class="tabs tabs-box mb-2" role="group" aria-label="Log in or register">
-            <button
-              type="button"
-              class="tab"
-              class:tab-active={mode === 'login'}
-              aria-pressed={mode === 'login'}
-              onclick={() => switchTo('login')}>Log in</button
-            >
-            <button
-              type="button"
-              class="tab"
-              class:tab-active={mode === 'register'}
-              aria-pressed={mode === 'register'}
-              onclick={() => switchTo('register')}>Register</button
-            >
-          </div>
-        {/if}
-
-        <form onsubmit={submit} novalidate={false}>
-          <label class="label" for="email">Email</label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            required
-            autocomplete="email"
-            class="input input-bordered w-full"
-            bind:value={email}
-          />
-
-          <label class="label mt-3" for="password">Password</label>
-          <input
-            id="password"
-            name="password"
-            type="password"
-            required
-            minlength="8"
-            autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
-            class="input input-bordered w-full"
-            bind:value={password}
-          />
-
-          {#if error}
-            <div role="alert" class="alert alert-error mt-4">
-              <span>{error}</span>
-            </div>
-          {/if}
-
-          <button type="submit" class="btn btn-primary mt-5 w-full" disabled={busy}>
-            {mode === 'login' ? 'Log in' : 'Create account'}
-          </button>
-        </form>
-
-        <!--
-          A plain link, because the foundation's flow is entirely server-side:
-          /api/auth/google/start 302s to Google's consent screen and the callback
-          sets the same session cookie a password login sets. No Google script
-          tag, no client SDK, nothing to initialise.
-
-          data-sveltekit-reload because /api/... is not a SvelteKit route and
-          this has to be a real navigation, not a client-side one.
-
-          Shown in both modes, and specifically NOT hidden while registration is
-          open. Google can only create an account under
-          ALLOW_OPEN_REGISTRATION=true - it never bootstraps the first one - but
-          `registrationOpen` is true for both that case and "no account exists
-          yet", and cannot tell them apart (same limitation as the tab pair
-          above). Gating on it would hide the button in the one deployment where
-          Google signup works, to spare the bootstrap case a message. So it
-          stays, and `registration_closed` says what to do instead - see
-          +page.ts.
-        -->
-        {#if data.googleLoginEnabled}
-          <div class="divider my-4 text-xs">or</div>
-          <a href="/api/auth/google/start" data-sveltekit-reload class="btn btn-outline w-full">
-            Sign in with Google
-          </a>
-        {/if}
-      </div>
+    Two buttons with aria-pressed, not ARIA tabs: there is one form below, not a
+    panel per tab, and tab roles would promise arrow-key navigation and
+    aria-controls that do not exist here - worse for a screen reader than no
+    ARIA at all.
+  -->
+  {#if data.registrationOpen}
+    <div class="mb-4 flex gap-2" role="group" aria-label="Log in or register">
+      <button
+        type="button"
+        class="rounded border px-3 py-1.5 {mode === 'login' ? 'font-bold' : ''}"
+        aria-pressed={mode === 'login'}
+        onclick={() => switchTo('login')}>Log in</button
+      >
+      <button
+        type="button"
+        class="rounded border px-3 py-1.5 {mode === 'register' ? 'font-bold' : ''}"
+        aria-pressed={mode === 'register'}
+        onclick={() => switchTo('register')}>Register</button
+      >
     </div>
-  </div>
+  {/if}
+
+  <form onsubmit={submit} novalidate={false}>
+    <label class="block" for="email">Email</label>
+    <input
+      id="email"
+      name="email"
+      type="email"
+      required
+      autocomplete="email"
+      class="mt-1 w-full rounded border px-2 py-1.5"
+      bind:value={email}
+    />
+
+    <label class="mt-4 block" for="password">Password</label>
+    <input
+      id="password"
+      name="password"
+      type="password"
+      required
+      minlength="8"
+      autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
+      class="mt-1 w-full rounded border px-2 py-1.5"
+      bind:value={password}
+    />
+
+    {#if error}
+      <p role="alert" class="mt-4">{error}</p>
+    {/if}
+
+    <button type="submit" class="mt-5 w-full rounded border px-3 py-1.5" disabled={busy}>
+      {mode === 'login' ? 'Log in' : 'Create account'}
+    </button>
+  </form>
+
+  <!--
+    A plain link, because the foundation's flow is entirely server-side:
+    /api/auth/google/start 302s to Google's consent screen and the callback sets
+    the same session cookie a password login sets. No Google script tag, no
+    client SDK, nothing to initialise.
+
+    data-sveltekit-reload because /api/... is not a SvelteKit route and this has
+    to be a real navigation, not a client-side one.
+
+    Shown in both modes, and specifically NOT hidden while registration is open.
+    Google can only create an account under ALLOW_OPEN_REGISTRATION=true - it
+    never bootstraps the first one - but `registrationOpen` is true for both that
+    case and "no account exists yet", and cannot tell them apart (same limitation
+    as the button pair above). Gating on it would hide the button in the one
+    deployment where Google signup works, to spare the bootstrap case a message.
+    So it stays, and `registration_closed` says what to do instead - see
+    +page.ts.
+  -->
+  {#if data.googleLoginEnabled}
+    <a
+      href="/api/auth/google/start"
+      data-sveltekit-reload
+      class="mt-4 block rounded border px-3 py-1.5 text-center"
+    >
+      Sign in with Google
+    </a>
+  {/if}
 </main>
