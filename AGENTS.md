@@ -54,7 +54,7 @@ Narrower forms, which are usually what you want:
 
 ```sh
 go test ./internal/app/ -run TestSpecIsByteStable   # one Go test
-./scripts/e2e.sh tests/nav.spec.ts                 # one browser spec
+./scripts/e2e.sh tests/manifest.spec.ts            # one browser spec
 ```
 
 `make e2e` forwards no arguments - call `scripts/e2e.sh` directly for a single
@@ -73,8 +73,8 @@ There is no linter or formatter beyond `go vet` and `svelte-check`. Keep Go
 | `cmd/mcp` | MCP server, deliberately zero tools |
 | `internal/app/routes.go` | **every route is registered here**, by both entry points |
 | `internal/cicd` | no code - table-tests the shell scripts under `scripts/ci/` |
-| `web/src/lib/` | API client, auth store, nav model, theme store |
-| `web/src/routes/(app)/` | signed-in pages; the shell and the auth guard wrap this group |
+| `web/src/lib/` | API client and auth store; no styling layer, by design |
+| `web/src/routes/(app)/` | signed-in pages; the auth guard wraps this group |
 | `web/tests/` | Playwright specs |
 | `scripts/ci/` | the decisions `.github/workflows/publish.yml` and `notify.yml` make |
 
@@ -95,10 +95,10 @@ than inventing a second pattern.
   never query. CI's `spec` job runs it with nil pools and no `DATABASE_URL`, so
   a query during registration panics there. Then `make spec` and commit both
   generated files.
-- **Adding a page** - a `+page.svelte` under `web/src/routes/(app)/` plus one
-  entry in `navItems` in `web/src/lib/nav.ts`. Nothing else. `web/tests/nav.spec.ts`
-  asserts the rendered links are *exactly* `navItems`, so a link hardcoded into
-  the shell fails the build.
+- **Adding a page** - a `+page.svelte` under `web/src/routes/(app)/`, and that
+  is the whole procedure. There is no navigation array and no shell component to
+  register it with; `(app)` is a `+layout.ts` guard with no `+layout.svelte`
+  beside it, so a page in the group inherits a session and nothing else.
 - **Auth guards live in a `load`, not a component** -
   `web/src/routes/(app)/+layout.ts`. A component-level guard flashes the page
   before redirecting.
@@ -130,24 +130,26 @@ These are the things that waste an hour.
 - **`TEST_DATABASE_URL` unset means the DB-backed test skips**, so a green
   `make test` can mean "it did not run". To actually run it:
   `TEST_DATABASE_URL=postgres://localhost:5432/go-home-template_test?sslmode=disable go test ./internal/app/ -run TestAuthRefusalStrings`
-- **Adding a theme is four edits and the fourth is easy to miss**: the `themes:`
-  list in `web/src/app.css`, the `Theme` union and `read()` in
-  `web/src/lib/theme.svelte.ts`, `order` and `labels` (and the icon) in
-  `web/src/lib/components/ThemePicker.svelte`, **and** the inline script's own
-  whitelist in `web/src/app.html`, which cannot import the TypeScript. Related:
-  `data-theme` is set only for an explicit light/dark choice - System means *no
-  attribute*, so CSS decides at first paint.
-- **`web/src/app.css` overrides two framework defaults, and both are cascade
-  facts a dependency bump can quietly take back** - `--font-sans`, and the
-  `outline-offset: 0` that stops a focused control showing two rings. The latter
-  has to live directly in `@layer utilities` at zero specificity: daisyUI nests
-  its rules as *sublayers* of `utilities`, so `base` and `components` lose to it,
-  while unlayered would win hard enough to beat a deliberate utility class.
-  `web/tests/theme.spec.ts` asserts the computed values.
+- **`web/src/app.css` is one `@import` and it stays that way.** No component
+  library, no theme, no tokens, no `tailwind.config.js`. Adding a house style
+  back is a regression against the point of the template, not an improvement -
+  see D5. A fork that wants daisyUI back runs `cd web && bun add -d daisyui`
+  *and* adds a `@plugin` block - the package is gone from `package.json`, so the
+  CSS on its own fails the build. D5 records the two cascade facts that bit us
+  when we shipped it.
+- **Tailwind's preflight makes an unstyled form control invisible.** It sets
+  `border: 0 solid` on `*` and `background-color: transparent` on
+  `button, input, select, textarea`, so a class-free `<input>` is a box you
+  cannot see. Both screens therefore carry a few *structural* classes: border,
+  padding and rounded corners on the controls, plus a max width on `/login`. The
+  only two that aren't structural are `text-2xl font-bold` on the home page's
+  heading and `font-bold` on `/login`'s selected mode button (the sighted-user
+  half of its `aria-pressed`). Nothing picks a colour, a font family or a
+  breakpoint. Keep new template markup to that line.
 - **Hidden markup still breaks browser specs.** Playwright's `getByRole` skips
-  hidden nodes, but `getByText` and `locator()` do not, so leaving a closed
-  drawer's markup in the DOM can fail an unrelated spec. Render it only when
-  open.
+  hidden nodes, but `getByText` and `locator()` do not, so markup that is merely
+  hidden - a closed dialog, a collapsed panel - can still fail an unrelated spec.
+  Render it only when it is open.
 - **`make init` rewrites every tracked text file** except `docs/tech-stack.md`
   and `scripts/init.sh`, then fails if the old identity survives anywhere. New
   docs that name the app are handled automatically; just never hardcode the slug

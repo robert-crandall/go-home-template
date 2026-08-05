@@ -181,10 +181,9 @@ the contract with `make spec`, then call that route from the tool.
 
 The template ships the smallest thing that proves auth works end to end:
 `/login` (log in, plus register while registration is open) and a guarded `/`
-that greets you, inside a navigation shell with one demo destination in it. The
-signed-in email, the theme picker and **Log out** live in the shell's footer
-rather than on the page, so every page you add gets them. That's it - the rest
-is yours.
+that greets you, names the account you're signed in as, and offers **Log out**.
+There is no navigation, no theme, and no chrome of any kind - the SPA has no
+opinion about what your app looks like. That's it; the rest is yours.
 
 Three pieces make it work, and they're all small enough to read in a sitting:
 
@@ -197,7 +196,7 @@ Three pieces make it work, and they're all small enough to read in a sitting:
   `ensure()` resolves once, from `GET /api/auth/me`; `signedIn()` and
   `signOut()` update it directly so a login doesn't cost a second round trip.
 - **The guard lives in a `load`, not a component** - `web/src/routes/(app)/+layout.ts`,
-  which covers every page in the shell. SvelteKit doesn't render a page until
+  which covers every page in the group. SvelteKit doesn't render a page until
   its `load` resolves, so a signed-out visitor gets a redirect instead of a
   flash of the greeting. `/login` guards the other way, in its own `+page.ts`,
   and bounces anyone already signed in.
@@ -266,78 +265,66 @@ server's words", because a code isn't a sentence.
 ## Adding a page
 
 Every signed-in page lives under `web/src/routes/(app)/`, which is the route
-group the navigation shell and the auth guard wrap. Adding a destination is two
-things:
+group the auth guard wraps. Adding one is one thing: a `+page.svelte` under that
+directory - say `notes/+page.svelte`, which serves `/notes`. There is no
+navigation array to register it in, because there is no navigation.
 
-1. A `+page.svelte` under `web/src/routes/(app)/` - say `notes/+page.svelte`.
-2. One entry in `navItems` in `web/src/lib/nav.ts`:
+`(app)/+layout.ts` is a guard with no `+layout.svelte` beside it, so pages in the
+group inherit a session and nothing else. Nothing wraps your page, nothing sets
+its background, and nothing adds a header. When you know what your app's chrome
+looks like, write a `+layout.svelte` there and everything in the group gets it.
 
-```ts
-export const navItems: NavItem[] = [
-  { href: '/', label: 'Home' },
-  { href: '/notes', label: 'Notes' }
-];
+`(app)/+page.svelte` is the example, and it's meant to be deleted or replaced. It
+renders **Log out** because sign-out has to live somewhere and a layout would be
+this template deciding you have a sidebar; move `SignOutButton` into your own
+layout once you have one.
+
+## Styling
+
+Tailwind 4 is wired up (`@tailwindcss/vite`, imported from `web/src/app.css`) and
+that is the whole styling layer. No component library, no theme system, no
+tokens, no `tailwind.config.js` - because a look is the one thing every app
+built on this replaces first, and something you have to delete is worse than
+nothing.
+
+One thing to know before your first page: Tailwind's preflight is on, and it
+resets every border to zero width and every form control to a transparent
+background. An `<input>` with no classes is an invisible box. That's why
+`/login` and the **Log out** button carry a few structural classes - a border,
+some padding, a rounded corner, a max width. Two classes aren't structural:
+`text-2xl font-bold` on the home page's heading, and `font-bold` on `/login`'s
+selected mode button, which is the sighted-user half of its `aria-pressed`.
+Nothing names a colour, a font family, or a breakpoint.
+
+If you want daisyUI (which is what this template shipped through M7), install it
+and add the plugin block:
+
+```sh
+cd web && bun add -d daisyui
 ```
 
-That's the whole thing. The desktop sidebar and the phone drawer both read that
-array, so there's no second list to update, and `web/tests/nav.spec.ts` reads it
-too - it asserts the rendered links are exactly `navItems` and that every one of
-them is reachable at both widths, so a new destination is covered the moment you
-add it, and a link hardcoded into the shell fails the build. The current
-destination is marked by prefix, so `/notes/123` still highlights **Notes**.
-
-An entry can carry an optional `group`, which puts a heading above it:
-
-```ts
-export const navItems: NavItem[] = [
-  { href: '/', label: 'Home' },
-  { href: '/notes', label: 'Notes', group: 'Writing' },
-  { href: '/drafts', label: 'Drafts', group: 'Writing' }
-];
+```css
+/* web/src/app.css */
+@import 'tailwindcss';
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
+}
 ```
 
-The grouping is a property of the entry rather than a nested array, so a page
-never has to be added to a group before it can exist. Consecutive entries
-sharing a `group` become one section; headings are plain text, not links, and
-don't collapse. Ungrouped entries render with no heading, which is why a nav
-with no groups at all looks exactly like it did before.
+D5 in [`docs/tech-stack.md`](docs/tech-stack.md) has the two things worth
+knowing before you do - where an override has to sit in the cascade to beat it,
+and the contrast floor for muted text.
 
-`/second` is a demo destination that exists so the shell has somewhere to
-navigate to. Delete `web/src/routes/(app)/second/` and its line in `navItems`
-when you have a real second page.
+## Install metadata
 
-On a phone the destinations live behind the hamburger in the header, in a
-drawer that closes when you pick one. There is no overflow menu and nothing is
-ever hidden: the drawer scrolls.
-
-The sidebar and drawer both end in a footer carrying the signed-in email, the
-theme picker, and **Log out** - so pages don't have to build sign-out for
-themselves.
-
-## Theming and install metadata
-
-A System / Light / Dark picker sits in the navigation shell's footer - bottom
-of the sidebar on desktop, bottom of the drawer on a phone - and `/login` places
-its own copy, so it works signed out too. The choice lands in `localStorage` and a synchronous
-inline script in `web/src/app.html` applies it before the app boots - so a
-reload, a browser restart, or a deep link all paint the right palette on the
-first frame, never the wrong one first.
-
-The bit worth knowing if you edit it: `data-theme` is only set for an explicit
-light or dark choice. daisyUI scopes its dark rule to `:root:not([data-theme])`,
-so **System** means no attribute and lets CSS decide, which is both flash-proof
-by construction and keeps following the OS live. Adding a fourth theme means
-four edits, and the fourth is easy to miss: the `themes:` list in
-`web/src/app.css`, the `Theme` union and the values `read()` accepts in
-`web/src/lib/theme.svelte.ts`, the `order` and `labels` values plus the icon
-branch in `web/src/lib/components/ThemePicker.svelte`, **and the inline
-script's own whitelist in `web/src/app.html`** - it can't import the
-TypeScript, so it repeats the valid values by hand.
-
-`web/static/` carries `manifest.webmanifest` and two PNG icons, plus a
-`theme-color` meta pair, so a home-screen shortcut gets a real icon and a
-sensibly tinted title bar. Regenerate the PNGs from `icon.svg` if you change the
+`web/static/` carries `manifest.webmanifest` and two PNG icons, so a home-screen
+shortcut gets a real icon. Regenerate the PNGs from `icon.svg` if you change the
 artwork - the `rsvg-convert` command is in a comment at the top of that file.
+
+The manifest deliberately declares no `theme_color` or `background_color`. Both
+are optional, and both are this template picking your installed app's title bar
+and splash screen, which is the same opinion the CSS stopped having. Add them
+back once you know your palette.
 
 There's deliberately no service worker, so there's no offline support and no
 service-worker-managed asset cache (ordinary HTTP caching of the hashed assets

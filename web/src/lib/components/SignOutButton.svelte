@@ -36,25 +36,30 @@
 </script>
 
 <!--
-  Its own component rather than markup inside `AppShell`, which is otherwise
-  layout and nothing else. It lives in the shell footer because signing out is
-  chrome - a page shouldn't have to remember to offer it.
+  Its own component because signing out is behaviour, not layout: the refused
+  logout above is the part worth keeping, and it should survive whatever chrome
+  you build. `(app)/+page.svelte` renders it today.
 
-  One root element, not a button and a sibling alert: the footer lays its
-  children out in a flex *row*, so two roots would put the error beside the
-  theme picker and squash both. One root keeps the failure stacked under the
-  button no matter what the parent's layout is.
+  The button carries the structural classes Tailwind's preflight takes away - it
+  resets a button's border and background to nothing - and no colour, so it
+  inherits whatever palette you bring.
+
+  One root element, not a button and a sibling alert. Drop this into a layout
+  that lays its children out in a row and two roots would put the failure
+  *beside* the button rather than under it; the class-free wrapper keeps them
+  stacked whatever the parent does, without picking a layout of its own.
 -->
-<div class="flex flex-col items-end gap-2">
-  <button type="button" class="btn btn-sm" onclick={logOut} disabled={busy}>Log out</button>
+<div>
+  <button
+    type="button"
+    class="rounded border px-3 py-1.5"
+    onclick={logOut}
+    disabled={busy}
+  >
+    Log out
+  </button>
 
   {#if error}
-    <!--
-      `alert alert-error` rather than `text-error`, which measures ~2.8:1 on
-      `base-100` and fails AA as body text. See D5 in docs/tech-stack.md.
-    -->
-    <div role="alert" class="alert alert-error text-sm">
-      <span>{error}</span>
-    </div>
+    <p role="alert" class="mt-2">{error}</p>
   {/if}
 </div>

@@ -34,7 +34,7 @@ and immediately diverge.
 ```mermaid
 graph TD
   subgraph browser["Browser"]
-    SPA["Svelte 5 SPA<br/>SvelteKit + adapter-static<br/>Tailwind 4 + daisyUI 5"]
+    SPA["Svelte 5 SPA<br/>SvelteKit + adapter-static<br/>Tailwind 4, unstyled"]
   end
 
   subgraph binary["Single Go binary (this repo)"]
@@ -66,7 +66,7 @@ graph TD
 | Frontend | Svelte + SvelteKit, `adapter-static` in SPA mode | 5.x / 2.x / 3.x |
 | Build tool | Vite | 8.x |
 | Package manager | Bun - no Node required | 1.3.x |
-| Styling | Tailwind CSS + daisyUI | 4.x / 5.x |
+| Styling | Tailwind CSS, and nothing on top of it | 4.x |
 | API client | `openapi-typescript` + `openapi-fetch` | 7.x / 0.17.x |
 | Packaging | one static binary, SPA embedded | - |
 | Container | multi-stage build to distroless | - |
@@ -381,146 +381,98 @@ Playwright compiles configs with esbuild, which strips types without checking
 them. Restating the whole `include` list to cover one small config is a worse
 trade than living with it - but know it's uncovered before you put logic there.
 
-### D5 - Tailwind CSS 4 and daisyUI 5 for theming
+### D5 - Tailwind CSS 4, and deliberately nothing on top of it
 
-Tailwind 4 via `@tailwindcss/vite`, configured CSS-first. daisyUI is loaded as a
-Tailwind plugin from the stylesheet, with no `tailwind.config.js` at all:
+Tailwind 4 via `@tailwindcss/vite`, configured CSS-first. `web/src/app.css` is
+one `@import 'tailwindcss'` and a comment. There is no component library, no
+theme system, no design tokens, no `tailwind.config.js`, and no house style.
+
+**This is the decision, not an absence of one.** A template's look is the one
+part of it that every fork replaces, and anything shipped here has to be
+understood and then removed before the replacing can start. Utilities are a
+different kind of thing: `flex` and `p-4` are not an opinion about what your app
+is, they are shorthand for CSS you were going to write anyway, and a fork that
+wants none of it deletes one line from `app.css` and one plugin from
+`vite.config.ts`.
+
+**What this used to be, and why it went.** Through M7 the template shipped
+daisyUI 5 for semantic component classes, a `light --default, dark --prefersdark`
+theme pair, a System/Light/Dark picker persisted in `localStorage`, a
+synchronous inline script in `app.html` that applied the saved theme before
+first paint, a `--font-sans` override, and an `outline-offset: 0` fix that
+existed only because daisyUI focuses controls with a 2px offset. All of it
+worked. All of it was also this repo deciding what your app looks like, down to
+the palette of the browser's own title bar, and every one of those pieces was
+load-bearing for the next: the inline script existed because the theme system
+did, the Go test in `web/dist_test.go` existed because the inline script did.
+Removing the top of that stack removed the rest.
+
+The same argument took `theme_color` and `background_color` out of
+`manifest.webmanifest`. Deleting a `#1e293b` meta tag from `app.html` while
+leaving the same `#1e293b` in the manifest would only move the opinion to the
+installed app's title bar and splash screen. Both members are optional;
+`name`, `icons`, `start_url`, `display` and `scope` stay, so installability is
+untouched, and the browser suite asks Chrome's own manifest parser to confirm
+that rather than assuming it.
+
+**One consequence worth knowing before you write a page: preflight is on.**
+Tailwind's reset sets `border: 0 solid` on everything and
+`background-color: transparent` on form controls, so an `<input>` with no
+classes is an invisible box and a `<button>` is a word. That is Tailwind's
+default and it stays the default here - a fork that types `border` and finds no
+reset has been surprised in a worse way. What it means in practice is that the
+two screens that ship carry a handful of *structural* classes: a border, some
+padding, a rounded corner, a max width. Two classes are not structural, and both
+are carrying meaning rather than taste: `text-2xl font-bold` on the home page's
+heading, because a document with no other typography has no other way to say
+"this is the heading", and `font-bold` on `/login`'s selected mode button, which
+is the sighted-user half of the `aria-pressed` beside it - drop it and the
+toggle still announces its state to a screen reader while telling everyone else
+nothing. Beyond those, nothing in the SPA names a colour, a font family, or a
+breakpoint.
+
+**Adding a component library back is an install and a plugin block**, and
+daisyUI in particular is still the one I would reach for: it is CSS classes
+rather than components, so the markup stays plain Svelte and worst case you
+delete the plugin again. It is not in `package.json` any more, so it is
+`cd web && bun add -d daisyui` first - the CSS alone would fail the build.
 
 ```css
-@import "tailwindcss";
+/* web/src/app.css */
+@import 'tailwindcss';
 @plugin "daisyui" {
   themes: light --default, dark --prefersdark;
 }
 ```
 
-Theme selection is `data-theme` on `<html>`, persisted in `localStorage`, applied
-by a synchronous inline script in `app.html` that runs *before* the app boots.
-M3 shipped it (`web/src/lib/theme.svelte.ts`, plus the picker, which M7 pulled out
-into `web/src/lib/components/ThemePicker.svelte`), and the shape is worth knowing
-because it's less code than it looks like it should be.
+If you do, two things this repo learned the hard way are worth reading before
+you rediscover them. First, daisyUI nests its rules as *sublayers* of
+`utilities` (`@layer utilities { @layer daisyui.l1... }`), and a layer's own
+content beats its sublayers whatever the specificity - so a rule meant to
+override daisyUI has to sit directly in `@layer utilities`, where `@layer base`
+and `@layer components` would silently lose and an unlayered rule would win hard
+enough to beat a deliberate utility class on a single control. Second, muted
+text has a contrast floor: measured against daisyUI 5.7.4's stock light theme,
+`text-base-content/50` is 3.38:1 and `/60` is 4.64:1, so `/60` is the lightest
+alpha that clears WCAG AA's 4.5:1 for body text and everything below it is
+decoration masquerading as text. Darkening the token does not rescue it - over
+pure white, even pure black at 40% tops out at 2.85:1.
 
-The stored preference is three-way - `system`, `light`, `dark` - and **the
-attribute is only set for an explicit light or dark choice.** daisyUI compiles
-`--prefersdark` to a `prefers-color-scheme: dark` rule scoped to
-`:root:not([data-theme])`, so a visitor who never picked anything has no
-attribute and the palette is chosen by CSS at first paint. That's a flash that
-can't happen rather than a race we win, and system mode keeps following the OS
-live with no `matchMedia` call anywhere in the app.
-
-A two-state sun/moon toggle would be worse for exactly that reason: it has to
-resolve the OS preference into a stored `light`/`dark` at boot, which both adds
-the `matchMedia` call and *loses* the live following. So the control is a
-sun/moon *cycle* instead - one icon button walking System -> Light -> Dark ->
-System, showing the icon of the preference it is currently on (monitor, sun,
-moon). Three states keep the property; only the affordance changed. The cost is
-the standing weakness of any cycling control - the icon says where you are and
-nothing about what pressing it does - so the accessible name carries both
-halves: `Theme: System. Activate for Light.`
-
-The no-flash claim is measured in `web/tests/theme.spec.ts` by aborting every
-`.js` request and asserting the page is still correctly themed - if the theme
-survives with zero application JavaScript, the inline script painted it. The
-step also asserts the abort count is non-zero, because a build change that moved
-the app's code out from under the pattern would otherwise let hydration run and
-quietly turn the proof vacuous.
-
-**Two framework defaults are overridden in `web/src/app.css`, and the layer one
-of them sits in is load-bearing.**
-
-`--font-sans` is set to `ui-sans-serif, system-ui, -apple-system, ...`. Tailwind
-4's own default still leads with the Bootstrap-era `-apple-system,
-BlinkMacSystemFont`; this is the modern spelling of the same intent, and it is
-the only token to change, because Tailwind derives `--default-font-family` from
-it and applies that to `html`.
-
-The other is `outline-offset: 0` on focused controls. daisyUI focuses with a
-2px outline at a 2px *offset*, so the ring floats clear of the control's own
-border and a focused input reads as two outlines with a gap between them. Zero
-sits the ring on the border, and since daisyUI already points both the border
-and the outline at `--input-color` on focus, the two edges merge into one.
-
-That override has to go **directly in `@layer utilities`, at zero specificity
-via `:where()`**, and that is not a style preference. daisyUI 5 nests its rules
-as sublayers of `utilities` (`@layer utilities { @layer daisyui.l1... }`), and a
-layer's own content beats its sublayers whatever the specificity - which is how
-a Tailwind utility overrides a daisyUI component in the first place. `@layer
-base` and `@layer components` would both silently lose; an *unlayered* rule
-would win too hard, beating a deliberate `focus:outline-offset-2` on a single
-control. Both facts are asserted as computed styles in `theme.spec.ts`, because
-neither breaks loudly.
-
-**Why daisyUI:** it gives semantic component classes (`btn`, `card`, `input`,
-`navbar`) and a real theme system on top of Tailwind, so a template app looks
-finished without me hand-rolling a design system. Theming is the specific reason
-it's here: switching the entire palette is one attribute, and adding a custom
-theme is a `@plugin "daisyui/theme"` block rather than a token refactor.
-
-**Why not a component library like Skeleton or Flowbite-Svelte:** those own your
-component API, so they're a much harder dependency to remove later. daisyUI is
-CSS classes; the markup stays plain Svelte, and worst case I delete the plugin
-and keep writing Tailwind.
-
-**Consequence:** semantic color classes only (`bg-base-100`, `text-base-content`,
-`btn-primary`). A hardcoded `bg-white` is a bug, because it survives the theme
-switch and looks broken in dark mode.
-
-**Muted text has a floor, and it is `/60`.** Secondary text wants to be quieter
-than body text, and the obvious way to do that is `text-base-content/50` or
-`/40`. Both fail WCAG AA. Measured against daisyUI 5.7.4's stock light theme,
-where `base-100` is pure white and `base-content` is `oklch(21% .006 285.885)`:
-
-| Alpha | Contrast |     | Alpha | Contrast |
-| ----- | -------- | --- | ----- | -------- |
-| `/40` | 2.53:1   |     | `/60` | 4.64:1   |
-| `/45` | 2.92:1   |     | `/65` | 5.49:1   |
-| `/50` | 3.38:1   |     | `/70` | 6.54:1   |
-| `/55` | 3.95:1   |     | `/75` | 7.83:1   |
-
-AA wants 4.5:1 for body text, so `/60` is the lightest thing that passes and
-everything below it is decoration masquerading as text. Light is the binding
-theme - dark's `base-100` is much closer to its `base-content` at the same
-alpha - and darkening the token wouldn't rescue it either: over pure white, even
-pure black at 40% tops out at 2.85:1. The number is a property of the alpha, not
-of the color you picked.
-
-Related, and easy to reach for by mistake: `text-error` is a *surface* color,
-meant to be a background with `text-error-content` on it. On `base-100` it sits
-under 3:1, so red error text fails as body text while looking obviously red and
-therefore obviously fine. The paired `alert alert-error` clears AA. That is why
-every error the app shows is an alert rather than a line of red text, and
-`web/src/app.css` carries the table so the next person doesn't have to
-rediscover it.
-
-`text-primary` has the same shape of problem in the *dark* theme - 3.4:1 on
-`base-100`, against 8.3:1 in light - which is enough for a border or an icon (a
-non-text marker needs 3:1) and short of AA for a label. So the navigation shell
-marks the current destination with weight and a `base-200` background rather
-than primary text; see D6.
-
-### D6 - What the SPA does: a shell, and almost nothing in it
+### D6 - What the SPA does: auth, and a blank page
 
 The entire frontend:
 
 - `/login` - email and password. Surfaces the foundation's real errors rather
   than a status-code-to-message table of its own, so whatever the server refuses
   with is what the person reads. The Log in / Register pair is there only while
-  registration is open - see below. It sits *outside* the navigation shell:
-  there is nowhere to navigate to when you're signed out.
-- A navigation shell around everything else - a sidebar on desktop, a hamburger
-  and a drawer on a phone. Its own section below.
-- `/` - guarded. Says hello. This is the "hello world," and it is now only a
-  greeting: the signed-in email and **Log out** moved into the shell's footer,
-  where every page gets them without writing them.
-- `/second` - guarded, and deliberately empty. It exists so the shell has
-  somewhere to navigate *to*; see below.
-- A theme picker, so it's on every screen and a signed-out visitor can use it
-  too. One icon button cycling System / Light / Dark - see D5 for why the
-  control is three-way rather than a two-state toggle. It lives in the shell's
-  footer, bottom-left, and `/login` places its own copy since it has no shell.
+  registration is open - see below.
+- `/` - guarded. Says hello, names the account you are signed in as, and offers
+  **Log out**. This is the "hello world," and it is meant to be replaced by
+  whatever your app is.
 - A route guard that calls `GET /api/auth/me` once on boot and redirects to
   `/login` on 401. It runs in `load`, not in the component, so a signed-out
   visitor gets a redirect and never a frame of the greeting. It's on the
-  shell's group layout rather than on each page, so a new page under
+  `(app)` group layout rather than on each page, so a new page under
   `routes/(app)/` is guarded by existing there.
 - One correction on top of that guard, in `+layout.svelte`. SvelteKit only
   writes the history entry for navigations it pushed itself, so a `load` that
@@ -532,112 +484,40 @@ The entire frontend:
   URL across history navigation in both directions; drop that hook and both
   assertions fail.
 
-**The navigation shell.** Adding a destination is one entry in one array:
+**There is no chrome, and `(app)` is a guard with no component.**
+`routes/(app)/+layout.ts` has no `+layout.svelte` beside it. SvelteKit builds a
+layout node for a layout module either way and renders the children through its
+built-in fallback component, so the group contributes a session and nothing
+else: no sidebar, no header, no drawer, no brand, no page wrapper. Adding a page
+is adding a `+page.svelte` under `routes/(app)/`. There is no second list to
+update, because there is no list.
 
-```ts
-// web/src/lib/nav.ts
-export const navItems: NavItem[] = [
-  { href: '/', label: 'Home' },
-  { href: '/second', label: 'Second page', group: 'Examples' }
-];
-```
+Through M7 there was a shell here - a desktop sidebar and a phone drawer built
+on a native `<dialog>`, both driven off a single `navItems` array, with the
+signed-in email, a theme picker and **Log out** in a shared footer. It was about
+450 lines with its tests, and it was good at what it did. It was also the
+template asserting that your app has a left-hand nav, which is a layout
+decision no template can make for an app it hasn't seen. What replaced it is
+nothing, and "nothing" is a smaller thing to disagree with.
 
-Nothing else holds a copy of the route list. The desktop sidebar, the phone
-drawer, and `web/tests/nav.spec.ts` all read that array, so a destination that
-renders in one place renders in all of them and the test extends itself when you
-add one. The test asserts the rendered links are *exactly* `navItems`, not
-merely that each one is present, so a link hardcoded into the shell - the thing
-"one entry in one array" is a promise against - fails the build.
+**Sign-out lives on the example page, not in a layout.** It has to live
+somewhere, and a layout is exactly the shape of chrome this decision is trying
+not to impose - putting it there would be the sidebar argument again in one
+element. `SignOutButton.svelte` stays its own component because the refused
+logout below is behaviour worth keeping whatever you build around it; move it
+into a layout of your own once you know what your chrome looks like.
 
-**`group` is a property of the entry, not a nested array.** A `NavGroup[]` reads
-better in isolation and makes the wrong thing true: a group would have to exist
-before a page could, and the rule stops being "one entry in one array" and
-becomes "one entry in one array, inside the right group, and create the group if
-it isn't there." `navSections()` walks the flat list once and starts a section
-whenever `group` changes. The cost is real and small: two runs of the same label
-separated by something else render as two headings rather than merging, and a
-typo makes a new group rather than an error. Both are visible immediately in the
-sidebar.
+**What the SPA deliberately doesn't have:** navigation of any kind, a theme, a
+settings or account screen, breadcrumbs, page headers beyond whatever `<h1>` a
+page writes itself, a file upload demo, an API token screen, a push subscription
+UI, and a `src/routes/demo/` folder.
 
-Headings are `<h2>`, labelling the `<ul>` beneath them, and they are **not
-links and not collapsible.** A collapsible group hides destinations behind a
-click, which is the same failure the no-overflow-menu decision below avoids, and
-it needs state that has to persist across navigations to not be infuriating.
-
-Both layouts are one component (`AppShell.svelte`), and both navs carry
-`aria-label="Primary"` - safe because they are never exposed at once. The
-sidebar is `display: none` below `lg`; the drawer renders *nothing at all* until
-it opens, which also keeps a second copy of the footer out of the DOM, so
-`auth.spec.ts` can keep reaching for one email and one form without scoping.
-
-`currentHref` is prefix matching, not the exact match you reach for first, so
-`/notes/123` still marks a `/notes` destination; `/` is special-cased because
-it's a prefix of everything. That is not nested navigation - the shell renders
-exactly one flat level and a section's children are the section's problem.
-
-It resolves **one** destination for a pathname - longest match - rather than
-asking each entry independently whether it matches. Ask independently and a nav
-carrying both `/notes` and `/notes/archive` marks both of them on
-`/notes/archive`, and two entries in one flat array is precisely what this
-model makes easy. `nav.spec.ts` pins that case as a plain function call, since
-the template's own two destinations can't produce it in a browser.
-
-**The phone nav is a drawer, and it is a native `<dialog>`.** An earlier cut of
-this shell used a bottom bar with `flex-1` items and no overflow menu; it worked,
-and it also meant every destination competed for a share of 390px, so the honest
-answer past about six was truncated labels. A drawer scrolls instead, which
-costs nothing and stops the destination count from being a design constraint.
-
-`<dialog>` + `showModal()` because Escape, the backdrop, the focus trap, focus
-restoration, and inerting the page behind it are all native. The hand-rolled
-equivalent is roughly sixty lines of listener plumbing and is where this kind of
-component usually goes wrong. Two things it doesn't do: it doesn't close on
-client-side navigation, so the shell closes it in `afterNavigate` **and** on
-link click (tapping the link for the page you're already on may not navigate at
-all); and it doesn't know about the breakpoint. Rotating an iPad from portrait
-to landscape crosses 768 to 1024 with the drawer open, which is the one way the
-sidebar and the drawer can be on screen together - a modal offering the same
-links as the sidebar underneath it, and two landmarks both named "Primary". A
-`matchMedia` listener closes the drawer when that happens. Closing rather than
-`lg:hidden`, because hiding an *open* modal leaves an invisible thing holding
-focus and the top layer; closing hands focus back and clears it.
-
-`showModal()` is Safari 15.4+ (March 2022), which is the floor this shell
-assumes. Below it the drawer would render inline instead of as a modal - it is
-the one part of this change I have not been able to exercise on a real iOS
-device.
-
-There are **no icons** in the nav. A glyph per entry is a second decision per
-entry and a second thing to keep consistent; in a labelled vertical list it adds
-nothing a screen reader or a person needs. Removing them deleted a field.
-
-The sidebar is `sticky top-0 h-screen`, so a long page scrolls under it rather
-than scrolling it away, with the nav column scrolling on its own and the footer
-pinned to the bottom of the viewport.
-
-**The footer is the shell's, not the page's.** It carries the signed-in email,
-the theme picker, and **Log out**, bottom-left in both the sidebar and the
-drawer. Sign-out is something every signed-in app needs and no page should have
-to build, and it was the last thing keeping identity on `/`. The button owns its
-own failure state (`SignOutButton.svelte`), so the shell stays layout.
-
-The app name comes from `manifest.webmanifest`, read at build time
-(`web/src/lib/app.ts`), not from a string literal in a component. The manifest
-is already the canonical name - `make init` rewrites it along with everything
-else - and a literal in the shell would be a second place to forget.
-
-**What the shell deliberately doesn't have:** nested or collapsible navigation,
-breadcrumbs, a settings or account screen, per-item icons, a per-item "show this
-on a phone" flag, and any notion of a page header beyond whatever `<h1>` the
-page writes itself. Each of those is a real feature some app wants and no template
-can guess at.
-
-**`/second` is a demo destination and is meant to be deleted.** A shell with one
-destination doesn't demonstrate anything - you can't see the current-page marker
-move, and there's nothing for a group heading to sit above. It carries the one
-`group` in the template for that reason. It's a heading and a paragraph
-explaining itself, so deleting it is deleting one file plus one line
-of `navItems`.
+**Why so little:** every screen in a template is a screen someone has to read,
+understand, and then delete, which is the same tax as the example database
+table in D2. Login and hello world are the two that prove the whole stack works
+end to end: cookie auth, the generated client, the embedded SPA, and deep-link
+fallback. A third screen proves nothing new about the stack and costs every app
+that starts here.
 
 **Which refusals you actually see depends on `ALLOW_OPEN_REGISTRATION`, and an
 earlier draft of this decision got that wrong.** It listed "409 when the email is
@@ -696,24 +576,11 @@ dead. So `SignOutButton` must not clear its local auth state on a failed logout
 either - otherwise the button
 looks like it worked while the cookie still signs you in on the next visit.
 
-That is the whole list. No file upload demo, no API token screen, no push
-subscription UI, no `src/routes/demo/` folder.
-
-**Why so little:** every screen in a template is a screen someone has to read,
-understand, and then delete, which is the same tax as the example database table
-in D2. Login and hello world are the two that prove the whole stack works end to
-end: cookie auth, the generated client, the embedded SPA, deep-link fallback, and
-the styling layer. A third screen proves nothing new about the stack and costs
-every app that starts here.
-
-`/second` is the one exception, and it's an exception with a job: it is what
-makes the shell demonstrable rather than theoretical. It pays the same deletion
-tax as anything else, which is why it's kept to a heading and a paragraph that
-says so out loud.
-
-The template ships static PWA metadata (`manifest.webmanifest`, `icon-192.png`,
-`icon-512.png`, and the `theme-color` metas) because it's inert markup with no
-code to delete. `web/dist_test.go` asserts every `icons[].src` resolves inside
+The template ships static PWA metadata (`manifest.webmanifest`, `icon-192.png`
+and `icon-512.png`) because it's inert markup with no code to delete. The
+placeholder icons stay for the same reason the manifest colours went: a manifest
+with no icons is not installable, so an icon is functional in a way a palette
+isn't. Replace the artwork. `web/dist_test.go` asserts every `icons[].src` resolves inside
 the embedded filesystem and that each file's real pixel dimensions match its
 declared `sizes` - the foundation's SPA handler falls back to `index.html` with a
 200 for any path it can't open, so a typo'd icon path serves HTML and looks fine
@@ -957,39 +824,36 @@ It is the only test that exercises the embedded SPA, the cookie round trip, and
 the deep-link fallback together, which is why it's worth the Playwright
 dependency.
 
-M3 added a second spec rather than more steps to that one, because theming
-shares no state with the auth flow and a `theme.spec.ts` that never signs in
-can't perturb it. Its interesting step is the no-flash proof described in D5.
+M3 added a second spec rather than more steps to that one, because what it
+checked shared no state with the auth flow and a spec that never signs in can't
+perturb it. Most of what was in it was theming, which M8 deleted along with the
+theme; what survives is `manifest.spec.ts`, whose job is that the install
+metadata is real files rather than the SPA fallback pretending, and that Chrome's
+own manifest parser reports no errors on it.
 
-M7 added `nav.spec.ts`, which does need a session, and that is where the shared
-first account stops being free. Registration is first-user-only in the E2E
-environment, so exactly one spec can register and `auth.spec.ts` asserts that it
-is the one that does. Playwright sorts spec files, so "auth runs first" was true
-by alphabet - which would have held until someone renamed a file, and then
-failed as `registration is closed` a long way from the cause. So the config
-splits that into two projects: `account`, which is just `auth.spec.ts`, and
-`chromium`, which is everything else and `dependencies: ['account']`. The order
-is now stated rather than inferred, running a single spec still gets an account
-because dependencies run too, and `nav.spec.ts` logs in without any
-"register if nobody has" fallback to get wrong.
+The two Playwright projects outlived the specs that motivated them, and they
+stay. Registration is first-user-only in the E2E environment, so exactly one
+spec can register and `auth.spec.ts` asserts that it is the one that does.
+Playwright sorts spec files, so "auth runs first" was true by alphabet - which
+would have held until someone renamed a file, and then failed as `registration is
+closed` a long way from the cause. So the config splits that into `account`,
+which is just `auth.spec.ts`, and `chromium`, which is everything else with
+`dependencies: ['account']`. The order is stated rather than inferred, running a
+single spec still gets an account because dependencies run too, and a spec added
+later inherits both without doing anything. With two specs that is mild
+ceremony; the first spec that needs a session gets it for free.
 
-`nav.spec.ts` imports `navItems` from `$lib/nav` rather than naming
-destinations, so it clicks through whatever the shell is configured with, at
-both widths. That is deliberate beyond tidiness: the README tells you to delete
-`/second`, and a spec that had `/second` written in it would make following the
-README a red build.
-
-**`page.request` can't do the signing in.** The spec needs a session and the
-obvious way to get one is Playwright's API request context, which shares the
-browser's cookie jar. Under Bun - which is the runtime the suite runs on, per
-D4 - that throws `TypeError: "/api/auth/login" cannot be parsed as a URL` on any
-response carrying a `Set-Cookie`, which is exactly the responses a login makes.
-Cookieless requests are unaffected, which is why `theme.spec.ts` still fetches
-the manifest and its icons through `page.request` quite happily, and why this
-took a while to pin down: it presents as a bug in your own test file. The same
-calls pass under Node. `nav.spec.ts` signs in with the browser's own `fetch`
-through `page.evaluate` instead, which is both immune to this and closer to what
-the app does.
+**`page.request` can't do the signing in**, which is worth writing down before
+that spec exists. The obvious way to get a session is Playwright's API request
+context, which shares the browser's cookie jar. Under Bun - which is the runtime
+the suite runs on, per D4 - that throws
+`TypeError: "/api/auth/login" cannot be parsed as a URL` on any response
+carrying a `Set-Cookie`, which is exactly what a login returns. Cookieless
+requests are unaffected, which is why `manifest.spec.ts` still fetches the
+manifest and its icons through `page.request` quite happily, and why this took a
+while to pin down: it presents as a bug in your own test file. The same calls
+pass under Node. Sign in with the browser's own `fetch` through `page.evaluate`
+instead, which is both immune to this and closer to what the app does.
 
 Exactly one step is mocked, because a healthy server cannot produce what it
 checks: logout returning 500, and logout failing at the network layer. Both
@@ -1393,7 +1257,7 @@ by workflow (PR #1 was merged by hand; #2, #3 and #9 closed unmerged), so it
 carries no evidence either way.
 
 Race-safe is not the same as safe. Majors auto-merge too, and CI's E2E flow
-covers auth and the SPA shell but not files, push, tokens, or MCP. That's an
+covers auth and the SPA but not files, push, tokens, or MCP. That's an
 accepted risk with one caveat worth stating plainly: **rolling back the GHCR tag
 does not roll back the database.** Startup runs goose `Up` only, so a foundation
 release carrying a migration has already changed the schema by the time you

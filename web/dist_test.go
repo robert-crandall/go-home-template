@@ -11,22 +11,6 @@ import (
 	"testing"
 )
 
-// moduleAttr matches a `type=module` attribute in any spelling HTML allows -
-// unquoted, single- or double-quoted, any case, spaces around the `=`. A plain
-// `strings.Contains(tag, "type=\"module\"")` would miss all but one of those,
-// which is a false pass in exactly the test whose job is to catch an accidental
-// edit. The leading whitespace requirement is doing real work: `\btype` would
-// also match inside `data-type`, since a hyphen is a word boundary.
-var moduleAttr = regexp.MustCompile(`(?i)(?:^|\s)type\s*=\s*("module"|'module'|module\b)`)
-
-// storageRead matches the inline script's read of the saved theme in either
-// quote style. Pinning one style would make the test fail on a formatting
-// change rather than a behavior change - and this is a template, so a fork that
-// adds Prettier (which prefers double quotes) would hit a Go test failure in a
-// file it never touched. Which quote the script uses is not what this test is
-// about; that it reads the preference at all is.
-var storageRead = regexp.MustCompile(`localStorage\.getItem\((?:'theme'|"theme")\)`)
-
 // TestDistHasIndex guards the mistake server.New panics on: a missing fs.Sub,
 // which leaves index.html buried under build/ instead of at the root.
 func TestDistHasIndex(t *testing.T) {
@@ -50,49 +34,33 @@ func TestDistHasAppChunks(t *testing.T) {
 	}
 }
 
-// TestIndexHTMLAppliesThemeBeforeBody checks that the theme script survived into
-// the build, is still in <head>, and is still a classic script.
-//
-// All three matter for the same reason: the script is what applies a saved theme
-// before the first paint. Moving it below <body> delays it, and `type="module"`
-// defers it to after parsing - either one reintroduces the flash of the wrong
-// palette without breaking anything a browser test that waits for the page would
-// notice.
-//
-// Not asserted: that the script precedes the stylesheet link. A render-blocking
-// stylesheet means nothing paints until the CSS has loaded, and a parser-blocking
-// inline script in <head> has run by then regardless of which came first, so the
-// ordering is a preference rather than a correctness property.
-func TestIndexHTMLAppliesThemeBeforeBody(t *testing.T) {
-	html := readDist(t, "index.html")
+// manifestHref pulls the href off the manifest link tag, in either attribute
+// order, so the test below can follow it rather than trust it.
+var (
+	manifestLink = regexp.MustCompile(`<link[^>]*rel="manifest"[^>]*>`)
+	hrefAttr     = regexp.MustCompile(`href="([^"]+)"`)
+)
 
-	script := storageRead.FindStringIndex(html)
-	if script == nil {
-		t.Fatal("index.html has no inline theme script - a saved theme now applies only after the app boots, which is a frame of the wrong palette")
-	}
-	read := script[0]
-	if body := strings.Index(html, "<body"); body < 0 || read > body {
-		t.Error("the inline theme script is not in <head> - it has to run before the body parses")
+// TestIndexHTMLResolvesTheManifest guards a link SvelteKit does not inject: the
+// manifest is written by hand in app.html, so an edit that drops it costs the
+// app its name, its icons and its installability, and nothing else notices.
+// Following the href is what makes this more than a substring check - asserting
+// only that `rel="manifest"` appears would pass on a link with no href at all,
+// or one pointing at a file the build no longer produces.
+func TestIndexHTMLResolvesTheManifest(t *testing.T) {
+	tag := manifestLink.FindString(readDist(t, "index.html"))
+	if tag == "" {
+		t.Fatal("index.html does not link the web manifest")
 	}
 
-	// The opening tag of the script that contains the storage read - bounded at
-	// its `>` rather than running to the read itself, so JS in the script body
-	// can never be mistaken for an attribute.
-	open := strings.LastIndex(html[:read], "<script")
-	if open < 0 {
-		t.Fatal("the theme storage read is not inside a <script> tag")
-	}
-	close := strings.Index(html[open:read], ">")
-	if close < 0 {
-		t.Fatal("the theme script's opening tag is unterminated")
-	}
-	tag := html[open : open+close+1]
-	if moduleAttr.MatchString(tag) {
-		t.Error("the inline theme script is a module, so the browser defers it until after parsing - it has to be a classic script to run before the first paint")
+	href := hrefAttr.FindStringSubmatch(tag)
+	if href == nil {
+		t.Fatalf("manifest link has no href: %s", tag)
 	}
 
-	if !strings.Contains(html, `rel="manifest"`) {
-		t.Error("index.html does not link the web manifest")
+	name := strings.TrimPrefix(href[1], "/")
+	if _, err := fs.Stat(Dist, name); err != nil {
+		t.Errorf("index.html links manifest %q, which the build does not produce: %v", href[1], err)
 	}
 }
 

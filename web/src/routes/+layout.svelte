@@ -34,11 +34,8 @@
   });
 </script>
 
-<!--
-  Nothing but the page. The theme picker used to hang off this layout because
-  there was no chrome to put it in; the shell has chrome now and holds its own,
-  and `/login`, which is outside the shell, pins its own to the corner.
--->
-<div class="min-h-screen bg-base-100 text-base-content">
-  {@render children()}
-</div>
+<!-- Nothing but the page. This layout is the `afterNavigate` fix above and the
+     `app.css` import, and deliberately not a wrapper element: a template that
+     picked the app's background, text colour or minimum height would be a look
+     to undo before you could pick your own. -->
+{@render children()}
