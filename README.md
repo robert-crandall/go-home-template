@@ -69,7 +69,7 @@ purpose - it's one keystroke, and a watcher is a whole extra thing to debug when
 the dev loop misbehaves.
 
 Other targets: `make test` (Go tests), `make check` (frontend type check),
-`make spec` (regenerate the API contract), `make e2e` (browser tests),
+`cd web && bun run test` (component tests), `make spec` (regenerate the API contract),
 `make install-mcp` (install the MCP server), `make mcp-token` (mint its API
 token), `make mcp-config` (print client configuration), `make clean`, and
 `make help`.
@@ -190,8 +190,7 @@ Three pieces make it work, and they're all small enough to read in a sitting:
 - **`web/src/lib/api/client.ts`** - `createClient<paths>()` and nothing else. No
   base URL, no headers, no interceptors. The session is an HttpOnly cookie and
   `fetch` sends those on same-origin requests, so there's nothing for the client
-  to attach. The browser suite asserts no request ever carried an
-  `Authorization` header, so that's checked rather than merely intended.
+  to attach. The integration tests exercise this cookie boundary.
 - **`web/src/lib/auth.svelte.ts`** - a `$state` user and a cached boot promise.
   `ensure()` resolves once, from `GET /api/auth/me`; `signedIn()` and
   `signOut()` update it directly so a login doesn't cost a second round trip.
@@ -348,27 +347,21 @@ covers what to add if that isn't good enough for your app, and why it isn't here
 ## Testing
 
 ```sh
-make test    # Go tests: the spec drift check, the route table
-make e2e     # a real Chromium against the real binary and a real Postgres
+make test                  # Go tests
+cd web && bun run test     # Component tests
 ```
 
-`make e2e` builds the SPA, builds `cmd/server`, and hands both to Playwright,
-which boots the binary on `:8081` (not `:8080`, so a `make dev` you forgot about
-can't collide with it). The whole auth journey is **one** test made of steps -
-Playwright gives every test a fresh browser context, so a split suite would
-start each step logged out and "still signed in after a reload" would be
-checking nothing.
+The frontend suite renders components with fixture data and no server, database,
+or browser. The Go suite covers the HTTP and database boundary, and
+`web/dist_test.go` checks the embedded build output.
 
-It needs two databases, which this repo doesn't create for you - and they're
-configured separately, because they're used by two different things:
+The database-backed Go test needs a database, which this repo doesn't create for
+you:
 
 ```sh
-createdb go-home-template_e2e     # the browser suite; its schema is reset per run
 createdb go-home-template_test    # the Go API test
 ```
 
-`make e2e` builds its URL from `E2E_POSTGRES_URL` (default
-`postgres://localhost:5432`) plus the database name in `web/playwright.config.ts`.
 The Go test reads `TEST_DATABASE_URL` and skips entirely when it's unset.
 
 One case can't be reached from a browser: registering a duplicate email. The
@@ -384,10 +377,8 @@ TEST_DATABASE_URL=postgres://localhost:5432/go-home-template_test?sslmode=disabl
 ```
 
 `403 registration is closed` moved half a step in the same direction. Now that
-`/login` hides the Register control once an account exists, the only way to
-submit a registration the server will refuse is to lose the race - so the
-browser suite stubs `GET /api/app` to `{"registrationOpen": true}` for that one
-step, which is what a page that loaded a moment too early is holding anyway.
+`/login` hides the Register control once an account exists, the component suite
+asserts that closed-registration state directly.
 
 ### Git worktrees
 

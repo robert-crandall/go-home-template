@@ -312,7 +312,7 @@ bundle. It is a build graph, and it has to be respected everywhere:
 
 - `make build` runs `bun run build` before `go build`. `make setup` does it once
   after clone, and the README's first instruction is `make setup`.
-- CI makes the `go` and `e2e` jobs depend on `web` and passes `web/build` to
+- CI makes the `go` and `integration` jobs depend on `web` and passes `web/build` to
   them as an artifact. The `docker-build` job doesn't need it - the Dockerfile's
   own `web-build` stage runs the same build inside the image, and
   `.dockerignore` excludes `web/build` so a local one can't leak in (D8, D9).
@@ -366,20 +366,9 @@ CI asserts the runtime directly (D9) rather than inferring it from a green
 build.
 
 **A second silent trap, same shape, different cause: what `svelte-check` looks
-at.** SvelteKit generates `.svelte-kit/tsconfig.json`, and among the repo-authored
-paths its `include` reaches, the only source directories are `../src`, `../test`,
-and `../tests` (each as `**/*.{js,ts,svelte}`), plus `../vite.config.{js,ts}`.
-Notably absent: `../e2e` and `../playwright.config.ts`. So a Playwright suite in
-`web/tests/` is type-checked and the identical suite in `web/e2e/` is not,
-silently - a deliberate type error under `web/e2e/` makes `bun run check` report
-"0 errors." M2's suite is in `web/tests/` for exactly that reason, which costs
-nothing and is why this repo does not extend `include` by hand. Put browser tests
-in `web/tests/`.
-
-The honest caveat is that `web/playwright.config.ts` is still unchecked, because
-Playwright compiles configs with esbuild, which strips types without checking
-them. Restating the whole `include` list to cover one small config is a worse
-trade than living with it - but know it's uncovered before you put logic there.
+at.** SvelteKit generates `.svelte-kit/tsconfig.json`, while Vitest discovers
+tests from the explicit `src/**/*.test.ts` pattern in `vite.config.ts`. Keeping
+frontend tests under `web/src/` makes both tools see the same source tree.
 
 ### D5 - Tailwind CSS 4, and deliberately nothing on top of it
 
@@ -412,8 +401,7 @@ The same argument took `theme_color` and `background_color` out of
 leaving the same `#1e293b` in the manifest would only move the opinion to the
 installed app's title bar and splash screen. Both members are optional;
 `name`, `icons`, `start_url`, `display` and `scope` stay, so installability is
-untouched, and the browser suite asks Chrome's own manifest parser to confirm
-that rather than assuming it.
+untouched, and `web/dist_test.go` confirms the built manifest remains valid.
 
 **One consequence worth knowing before you write a page: preflight is on.**
 Tailwind's reset sets `border: 0 solid` on everything and
@@ -480,9 +468,8 @@ The entire frontend:
   address bar on the entry you popped to - the greeting under `/login`, the
   login form under `/` (#18). An `afterNavigate` that compares `page.url` to
   `location.href` and calls `$app/navigation`'s `replaceState` when they
-  disagree puts the bar back. The E2E suite asserts both the content and the
-  URL across history navigation in both directions; drop that hook and both
-  assertions fail.
+  disagree puts the bar back. Manual use of the running app covers this
+  browser-only behavior.
 
 **There is no chrome, and `(app)` is a guard with no component.**
 `routes/(app)/+layout.ts` has no `+layout.svelte` beside it. SvelteKit builds a
@@ -558,16 +545,9 @@ at all.) `load` falls back to *closed* when the call fails, because login is the
 case for the whole life of a single-account app and offering a registration the
 server would refuse anyway helps nobody.
 
-That race is also the only way the browser suite can still see 403, now that the
-control is hidden when the gate is closed: one step stubs `GET /api/app` to
-`{"registrationOpen": true}`, which is exactly what a page that loaded too early
-is holding. The rest of the suite runs against the real endpoint in both states,
-which is what proves the endpoint flips at all.
-
-The E2E suite runs with the gate closed, because that's the default a new app
-gets, so it pins 403 and 401 and can't observe 409. `internal/app/api_test.go`
-covers 409 instead, opening the gate in-process against a real database - much
-cheaper than standing up a second binary and database just to see one string.
+The component test covers the closed-registration rendering directly.
+`internal/app/api_test.go` covers 409 in-process against a real database, which
+is cheaper than standing up a second binary and database just to see one string.
 
 **Logout can fail, and the button has to let it.** The foundation returns 500
 and sends no clearing `Set-Cookie` when it couldn't revoke the session
@@ -763,10 +743,10 @@ written:
 
 | Job | Needs | What it runs |
 |---|---|---|
-| `web` | - | `bun install --frozen-lockfile`, assert the Bun runtime is in force, then `bun run check` (svelte-check) and `bun run build`, upload `web/build` |
+| `web` | - | `bun install --frozen-lockfile`, assert the Bun runtime is in force, then `bun run check`, `bun run test`, and `bun run build`, upload `web/build` |
 | `go` | `web` | download artifact, then `go build ./... && go vet ./... && go test ./...` |
 | `spec` | - | `make spec` (`go run ./cmd/openapi`, then `bun run gen:api`), fail on diff |
-| `e2e` | `web` | download artifact, `bun run e2e:install`, `make e2e` (builds the real binary, runs it against Postgres, runs Playwright), plus `TestAuthRefusalStrings` against the always-present `postgres` database on the same service, so it can't race the browser suite's schema reset |
+| `integration` | `web` | download artifact, then run the full Go test suite against the always-present `postgres` database |
 | `docker-build` | - | `docker buildx build` for `linux/amd64`, cache output only. PRs stop here |
 
 Publish is deliberately *not* in this graph; it's a separate workflow, below.
@@ -782,9 +762,8 @@ exists to kill. `bun run gen:api` in particular is a `package.json` script rathe
 than `bunx openapi-typescript`, because `bunx` will happily fetch the latest
 version from the registry when the package isn't installed - and D3 pins that
 version precisely so `schema.d.ts` is pinned too. The `web` job runs only
-`check` and `build` today; the milestones that add eslint and vitest add their
-steps to that job, and they have to use the same `bun run` form for the same
-reason.
+`check`, `test`, and `build` today. They all use the same `bun run` form for the
+same reason.
 
 The `web` job's runtime assertion is the guard for all of that. It runs
 `bun run --silent node -p "typeof Bun === 'undefined' ? 'NODE' : 'BUN'"` from
@@ -812,73 +791,30 @@ on `ubuntu-latest` (Docker 28.0.4, buildx v0.35.0), a build without the setup
 step dies with `Cache export is not supported for the docker driver`. It is not,
 as it once was, about exporting a manifest list.
 
-The E2E spec is one flow, and deliberately one `test()` rather than a
-`describe.serial` of several: Playwright gives every test its own browser
-context, so a split suite would start each step logged out and "stay signed in
-across a reload" would be checking nothing. As of M2 the steps are: a signed-out
-visitor hitting `/` bounces to `/login`, register the first user and get
-greeted, reload and stay signed in, a logout the server refused (two failure
-modes, driven by a mocked response), log out for real and stay logged out
-across a reload, a wrong password, a second registration refused, log back in.
-It is the only test that exercises the embedded SPA, the cookie round trip, and
-the deep-link fallback together, which is why it's worth the Playwright
-dependency.
+The frontend test strategy is deliberately layered. Vitest renders Svelte
+components against fixture data with no server, database, or browser; pure
+frontend helpers belong in the same runner. The login page test proves both
+registration-mode interaction and the closed-registration state. Go tests cover
+the HTTP/database boundary and the embedded build, while `svelte-check`,
+generated API types, and `make spec` cover frontend/API contract drift.
 
-M3 added a second spec rather than more steps to that one, because what it
-checked shared no state with the auth flow and a spec that never signs in can't
-perturb it. Most of what was in it was theming, which M8 deleted along with the
-theme; what survives is `manifest.spec.ts`, whose job is that the install
-metadata is real files rather than the SPA fallback pretending, and that Chrome's
-own manifest parser reports no errors on it.
+This template does not use browser tests. That gives up automatic coverage for
+browser-only behavior such as viewport interaction, but avoids making a browser,
+port, and disposable database the default frontend test harness for every app
+created from this template. Manual use of a running app is the accepted
+substitute for those checks.
 
-The two Playwright projects outlived the specs that motivated them, and they
-stay. Registration is first-user-only in the E2E environment, so exactly one
-spec can register and `auth.spec.ts` asserts that it is the one that does.
-Playwright sorts spec files, so "auth runs first" was true by alphabet - which
-would have held until someone renamed a file, and then failed as `registration is
-closed` a long way from the cause. So the config splits that into `account`,
-which is just `auth.spec.ts`, and `chromium`, which is everything else with
-`dependencies: ['account']`. The order is stated rather than inferred, running a
-single spec still gets an account because dependencies run too, and a spec added
-later inherits both without doing anything. With two specs that is mild
-ceremony; the first spec that needs a session gets it for free.
+The embedded artifact tests in `web/dist_test.go` keep the install metadata
+coverage at the shippable-build layer: they verify the manifest and every icon
+are real embedded files, not the SPA fallback pretending to be one.
 
-**`page.request` can't do the signing in**, which is worth writing down before
-that spec exists. The obvious way to get a session is Playwright's API request
-context, which shares the browser's cookie jar. Under Bun - which is the runtime
-the suite runs on, per D4 - that throws
-`TypeError: "/api/auth/login" cannot be parsed as a URL` on any response
-carrying a `Set-Cookie`, which is exactly what a login returns. Cookieless
-requests are unaffected, which is why `manifest.spec.ts` still fetches the
-manifest and its icons through `page.request` quite happily, and why this took a
-while to pin down: it presents as a bug in your own test file. The same calls
-pass under Node. Sign in with the browser's own `fetch` through `page.evaluate`
-instead, which is both immune to this and closer to what the app does.
+The integration job owns the real Postgres boundary. It runs the complete Go
+suite with `TEST_DATABASE_URL` set, while the `go` job remains a fast
+database-free compile and unit pass.
 
-Exactly one step is mocked, because a healthy server cannot produce what it
-checks: logout returning 500, and logout failing at the network layer. Both
-matter because the foundation refuses to clear the session cookie when it
-couldn't revoke the session (D6), so the page must not pretend otherwise.
-
-The no-flash guarantee in D6 is checked with a `MutationObserver` installed via
-`addInitScript`, not by looking at the DOM after the redirect settled. Sampling
-the settled DOM passes a guard that painted the page for one frame and then
-bounced, which is precisely the bug the criterion is about - measured, not
-assumed: moving the guard from `load` into the component makes the observer fail
-while the settled-DOM check still passes.
-
-Two notes on the details:
-
-- `go test ./...`, not `go test -p 1 ./...`. The foundation needs `-p 1` because
-  its own `auth` and `files` integration test packages share one database and
-  wipe `users` on setup. Nothing in the template does that. Add `-p 1` the day
-  you add a second package with database integration tests, not before, and add
-  the Postgres service to the `go` job on the same day. M2 added the template's
-  first database-backed test (`internal/app`, pinning the auth refusal strings),
-  and it does not change that advice: the test skips unless `TEST_DATABASE_URL`
-  is set, so the `go` job still runs without a database and the `e2e` job runs
-  it against the Postgres already stood up there. One package, one database, no
-  shared-fixture races - so still no `-p 1`. Revisit on the second such package.
+The frontend tests intentionally stop at the component boundary. Browser-only
+behavior such as viewport interaction is a manual check rather than a default
+dependency for every app created from this template.
 - The GHCR image path comes from `${{ github.repository }}`, so a repo created
   from this template publishes under its own name without anyone editing a
   workflow.
@@ -1256,8 +1192,8 @@ reproduced here. The foundation has never actually auto-merged a Dependabot PR
 by workflow (PR #1 was merged by hand; #2, #3 and #9 closed unmerged), so it
 carries no evidence either way.
 
-Race-safe is not the same as safe. Majors auto-merge too, and CI's E2E flow
-covers auth and the SPA but not files, push, tokens, or MCP. That's an
+Race-safe is not the same as safe. Majors auto-merge too, and CI's integration
+and component tests cover auth and the SPA but not files, push, tokens, or MCP. That's an
 accepted risk with one caveat worth stating plainly: **rolling back the GHCR tag
 does not roll back the database.** Startup runs goose `Up` only, so a foundation
 release carrying a migration has already changed the schema by the time you

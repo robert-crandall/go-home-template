@@ -24,7 +24,7 @@ import (
 // of these the UI would quietly start saying something new. This is where that
 // gets noticed.
 //
-// The 409 is here rather than in the browser suite because it is unreachable
+// The 409 is here rather than in a browser test because it is unreachable
 // from a browser: with the default first-user-only gate, registerUser checks
 // the gate before it checks for a duplicate, so a second registration is always
 // 403. Reaching 409 needs open registration, and standing up a second server
@@ -139,7 +139,7 @@ func TestAuthRefusalStrings(t *testing.T) {
 			wantStatus: http.StatusUnauthorized, wantDetail: "invalid email or password",
 		},
 		{
-			// The default gate, and the one the browser suite exercises. Kept
+			// The default gate, and the one the integration test exercises. Kept
 			// here too so all three strings are pinned in one place.
 			name: "registration closed", ts: newServer(false), path: "/api/auth/register",
 			email: "second@example.com", password: password,

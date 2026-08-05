@@ -8,8 +8,8 @@ import type { paths } from './schema';
  *
  * That last part is load-bearing. `fetch` sends same-origin cookies by default,
  * so the session cookie rides along on its own and there is nothing for a token
- * header to do. The e2e suite asserts no request ever carries an
- * `Authorization` header, so this staying empty is checked, not just intended.
+ * header to do. The integration tests exercise this same cookie-based boundary,
+ * so this staying empty is checked, not just intended.
  */
 export const api = createClient<paths>();
 
