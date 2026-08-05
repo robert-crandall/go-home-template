@@ -5,8 +5,9 @@
 # acceptance criterion in issue #7; nothing else belongs here.
 #
 # This is deliberately NOT in CI. D9's design has pull requests stop at
-# `docker-build`, and a full container e2e would be a slow job duplicating what
-# `make e2e` already proves about the app. The cost of that choice is that this
+# `docker-build`, and a full container integration run would be a slow job
+# duplicating what the Go integration job already proves about the app. The cost
+# of that choice is that this
 # script can rot without anyone noticing - so run it when you touch the
 # Dockerfile, the healthcheck, or the upload wiring, and paste the output.
 #

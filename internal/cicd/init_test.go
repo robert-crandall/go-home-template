@@ -213,7 +213,7 @@ func assertSuccessfulRename(
 	assertRepoFileContains(t, repo, "docs/openapi.json", `"title": "`+name+`"`)
 	assertRepoFileContains(t, repo, "README.md", `import appmigrations "`+module+`/migrations"`)
 	assertRepoFileContains(t, repo, "scripts/docker-smoke.sh", `IMAGE="${IMAGE:-`+slug+`:smoke}"`)
-	assertRepoFileContains(t, repo, ".github/workflows/ci.yml", "POSTGRES_DB: "+slug+"_e2e")
+	assertRepoFileContains(t, repo, ".github/workflows/ci.yml", "POSTGRES_DB: "+slug+"_test")
 }
 
 func assertNoOldIdentity(t *testing.T, repo string, newIdentity string) {

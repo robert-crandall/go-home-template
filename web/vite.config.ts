@@ -1,9 +1,12 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
+  resolve: {
+    conditions: ['browser']
+  },
   server: {
     port: 5173,
     strictPort: true,
@@ -14,5 +17,10 @@ export default defineConfig({
       '/api': 'http://localhost:8080',
       '/healthz': 'http://localhost:8080'
     }
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test-setup.ts',
+    include: ['src/**/*.test.ts']
   }
 });

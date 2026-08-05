@@ -28,7 +28,6 @@ The two test suites want their own databases, and this repo does not create
 them:
 
 ```sh
-createdb go-home-template_e2e     # browser suite; schema reset every run
 createdb go-home-template_test    # the DB-backed Go test
 ```
 
@@ -42,8 +41,8 @@ times are measured on a warm cache and nothing here is slow.
 | `make build` | frontend, then `bin/go-home-template` | ~3s |
 | `make test` | `go test ./...` (builds the frontend first if missing) | ~8s |
 | `make check` | `svelte-check` over the frontend | ~3s |
+| `cd web && bun run test` | Vitest component and unit tests | ~3s |
 | `make spec` | regenerate the API contract - **commit both outputs** | ~3s |
-| `make e2e` | Playwright + real Chromium against the real binary | ~9s |
 | `make install-mcp` | install the module-named MCP binary into `~/bin` | ~1s |
 | `make mcp-token` | mint an MCP token and write its app config | ~1s |
 | `make mcp-config` | print the MCP client `mcpServers` JSON | <1s |
@@ -54,12 +53,8 @@ Narrower forms, which are usually what you want:
 
 ```sh
 go test ./internal/app/ -run TestSpecIsByteStable   # one Go test
-./scripts/e2e.sh tests/manifest.spec.ts            # one browser spec
+cd web && bun run test src/routes/login/page.test.ts # one frontend test file
 ```
-
-`make e2e` forwards no arguments - call `scripts/e2e.sh` directly for a single
-spec. Never run `bun run e2e` on its own: only `scripts/e2e.sh` rebuilds the SPA
-and the binary first, so a bare `bun run e2e` silently tests a stale build.
 
 There is no linter or formatter beyond `go vet` and `svelte-check`. Keep Go
 `gofmt`-clean.
@@ -75,7 +70,7 @@ There is no linter or formatter beyond `go vet` and `svelte-check`. Keep Go
 | `internal/cicd` | no code - table-tests the shell scripts under `scripts/ci/` |
 | `web/src/lib/` | API client and auth store; no styling layer, by design |
 | `web/src/routes/(app)/` | signed-in pages; the auth guard wraps this group |
-| `web/tests/` | Playwright specs |
+| `web/src/**/*.test.ts` | Vitest component and unit tests |
 | `scripts/ci/` | the decisions `.github/workflows/publish.yml` and `notify.yml` make |
 
 Do not edit, and do not read for intent:
@@ -146,10 +141,9 @@ These are the things that waste an hour.
   heading and `font-bold` on `/login`'s selected mode button (the sighted-user
   half of its `aria-pressed`). Nothing picks a colour, a font family or a
   breakpoint. Keep new template markup to that line.
-- **Hidden markup still breaks browser specs.** Playwright's `getByRole` skips
-  hidden nodes, but `getByText` and `locator()` do not, so markup that is merely
-  hidden - a closed dialog, a collapsed panel - can still fail an unrelated spec.
-  Render it only when it is open.
+- **Render conditional markup only when it is needed.** Keeping closed or
+  collapsed UI in the DOM makes component assertions ambiguous and adds
+  accessibility noise.
 - **`make init` rewrites every tracked text file** except `docs/tech-stack.md`
   and `scripts/init.sh`, then fails if the old identity survives anywhere. New
   docs that name the app are handled automatically; just never hardcode the slug
@@ -161,21 +155,27 @@ These are the things that waste an hour.
 
 CI (`.github/workflows/ci.yml`) runs five jobs and all must pass: `web`
 (bunfig assertion, `bun install --frozen-lockfile`, `bun run check`,
-`bun run build`), `go` (`go build`, `go vet`, `go test`), `spec` (`make spec`,
-then `git diff --exit-code` on the two generated files), `e2e` (real Postgres,
-real binary, plus a DB-backed `TestAuthRefusalStrings`), and `docker-build` (a
+`bun run test`, `bun run build`), `go` (`go build`, `go vet`, `go test`),
+`spec` (`make spec`, then `git diff --exit-code` on the two generated files),
+`integration` (all Go tests against real Postgres), and `docker-build` (a
 cache-only image build).
 
 Local preflight - a subset of CI, not an equivalent:
 
 ```sh
-make build && make check && go vet ./... && make test && make spec && make e2e
+make build && make check && (cd web && bun run test) && go vet ./... && make test && make spec
 ```
 
 The Docker build has no cheap local equivalent; `make docker-smoke` is the
 heavyweight one, and CI's version only builds.
 
-Tests are required for behaviour changes. Commit subjects are imperative and
+Tests are required for behaviour changes. Browser tests are deliberately not
+used in this template: integration tests cover the real HTTP and database
+boundary, Vitest covers rendered components and pure frontend logic, and Go
+artifact tests cover the shippable embedded build. Manual use of a running app
+is the substitute for browser-only behavior such as viewport interaction.
+
+Commit subjects are imperative and
 sentence case with no Conventional Commits prefix ("Close the drawer when the
 viewport crosses lg"). The body explains *why*, and says what was measured -
 including that the new test was confirmed to fail without the change.
