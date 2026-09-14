@@ -34,8 +34,5 @@
   });
 </script>
 
-<!-- Nothing but the page. This layout is the `afterNavigate` fix above and the
-     `app.css` import, and deliberately not a wrapper element: a template that
-     picked the app's background, text colour or minimum height would be a look
-     to undo before you could pick your own. -->
+<!-- No app shell: pages inherit the theme, not a navigation or layout choice. -->
 {@render children()}

@@ -15,6 +15,10 @@ expensive to break in a suggestion.
   retries, caching, or fallback machinery only for a failure mode that is
   actually reachable here - and if you add one, say in the PR which scenario it
   is for.
+- **Keep screens themeable.** Use DaisyUI semantic classes and the application
+  tokens in `web/src/themes.css`. Do not hardcode palette, typography, spacing,
+  radii, shadows, or visual states in components. A default theme is not a fixed
+  application style; follow AGENTS.md's theme contract and its frontend checks.
 - **Reviews: report bugs, regressions, security issues, and broken behaviour in
   the changed code.** Skip style, naming, comment wording, and "what if X"
   about failure modes the design has deliberately assumed away - those are

@@ -3,6 +3,7 @@
   import { api } from '$lib/api/client';
   import { apiErrorMessage } from '$lib/api/errors';
   import { auth } from '$lib/auth.svelte';
+  import ThemePicker from '$lib/components/ThemePicker.svelte';
 
   let { data } = $props();
 
@@ -57,14 +58,7 @@
   }
 </script>
 
-<!--
-  Semantic markup and the structural classes Tailwind's preflight takes away -
-  it resets every border to zero width and every form control to a transparent
-  background, so with no classes at all this page is a set of invisible boxes.
-  Nothing here picks a colour, a font or a layout beyond centring the form:
-  restyle it, or throw it away and write your own.
--->
-<main class="mx-auto max-w-sm p-6">
+<main class="mx-auto max-w-form p-page">
   <!--
     Only when registration is open. Closed is the steady state for a
     single-account app, and a Register control that can only ever produce
@@ -83,16 +77,16 @@
     ARIA at all.
   -->
   {#if data.registrationOpen}
-    <div class="mb-4 flex gap-2" role="group" aria-label="Log in or register">
+    <div class="mb-field flex flex-wrap gap-inline" role="group" aria-label="Log in or register">
       <button
         type="button"
-        class="rounded border px-3 py-1.5 {mode === 'login' ? 'font-bold' : ''}"
+        class="btn {mode === 'login' ? 'btn-primary' : ''}"
         aria-pressed={mode === 'login'}
         onclick={() => switchTo('login')}>Log in</button
       >
       <button
         type="button"
-        class="rounded border px-3 py-1.5 {mode === 'register' ? 'font-bold' : ''}"
+        class="btn {mode === 'register' ? 'btn-primary' : ''}"
         aria-pressed={mode === 'register'}
         onclick={() => switchTo('register')}>Register</button
       >
@@ -107,11 +101,11 @@
       type="email"
       required
       autocomplete="email"
-      class="mt-1 w-full rounded border px-2 py-1.5"
+      class="input mt-label w-full"
       bind:value={email}
     />
 
-    <label class="mt-4 block" for="password">Password</label>
+    <label class="mt-field block" for="password">Password</label>
     <input
       id="password"
       name="password"
@@ -119,16 +113,16 @@
       required
       minlength="8"
       autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
-      class="mt-1 w-full rounded border px-2 py-1.5"
+      class="input mt-label w-full"
       bind:value={password}
     />
 
     {#if error}
-      <p role="alert" class="mt-4">{error}</p>
+      <p role="alert" class="alert alert-error mt-field">{error}</p>
     {/if}
 
-    <button type="submit" class="mt-5 w-full rounded border px-3 py-1.5" disabled={busy}>
-      {mode === 'login' ? 'Log in' : 'Create account'}
+    <button type="submit" class="btn btn-primary mt-section w-full" disabled={busy} aria-busy={busy}>
+      {busy ? 'Working...' : mode === 'login' ? 'Log in' : 'Create account'}
     </button>
   </form>
 
@@ -154,9 +148,13 @@
     <a
       href="/api/auth/google/start"
       data-sveltekit-reload
-      class="mt-4 block rounded border px-3 py-1.5 text-center"
+      class="btn mt-field w-full"
     >
       Sign in with Google
     </a>
   {/if}
+
+  <div class="mt-section">
+    <ThemePicker />
+  </div>
 </main>

@@ -1,0 +1,51 @@
+/* Test-only: inject into a running app and set data-theme="stress".
+   Nothing imports this fixture into the shipped CSS or theme picker. */
+[data-theme='stress'] {
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #eeeeee;
+  --color-base-300: #cccccc;
+  --color-base-content: #111111;
+  --color-primary: #004400;
+  --color-primary-content: #ffffff;
+  --color-secondary: #440044;
+  --color-secondary-content: #ffffff;
+  --color-accent: #004444;
+  --color-accent-content: #ffffff;
+  --color-neutral: #222222;
+  --color-neutral-content: #ffffff;
+  --color-info: #003366;
+  --color-info-content: #ffffff;
+  --color-success: #004400;
+  --color-success-content: #ffffff;
+  --color-warning: #ffee88;
+  --color-warning-content: #111111;
+  --color-error: #880000;
+  --color-error-content: #ffffff;
+  --color-muted: #444444;
+  --color-field-border: #555555;
+  --color-focus: #004400;
+  --font-body: Georgia, serif;
+  --font-heading: Georgia, serif;
+  --text-body: 1.125rem;
+  --text-body--line-height: 1.6;
+  --text-heading: 2rem;
+  --font-weight-control: 700;
+  --spacing-page: 1rem;
+  --spacing-section: 2rem;
+  --spacing-field: 1.25rem;
+  --spacing-inline: 0.75rem;
+  --spacing-control-x: 1rem;
+  --spacing-control-y: 0.75rem;
+  --radius-field: 0;
+  --radius-box: 0;
+  --radius-selector: 0;
+  --size-field: 0.3rem;
+  --size-selector: 0.3rem;
+  --size-control: 3rem;
+  --border: 2px;
+  --depth: 0;
+  --noise: 0;
+  --shadow-control: 0 2px 3px #00000033;
+  --shadow-surface: 0 3px 6px #00000033;
+}
