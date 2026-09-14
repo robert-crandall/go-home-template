@@ -40,10 +40,6 @@
   logout above is the part worth keeping, and it should survive whatever chrome
   you build. `(app)/+page.svelte` renders it today.
 
-  The button carries the structural classes Tailwind's preflight takes away - it
-  resets a button's border and background to nothing - and no colour, so it
-  inherits whatever palette you bring.
-
   One root element, not a button and a sibling alert. Drop this into a layout
   that lays its children out in a row and two roots would put the failure
   *beside* the button rather than under it; the class-free wrapper keeps them
@@ -52,14 +48,15 @@
 <div>
   <button
     type="button"
-    class="rounded border px-3 py-1.5"
+    class="btn"
     onclick={logOut}
     disabled={busy}
+    aria-busy={busy}
   >
-    Log out
+    {busy ? 'Logging out...' : 'Log out'}
   </button>
 
   {#if error}
-    <p role="alert" class="mt-2">{error}</p>
+    <p role="alert" class="alert alert-error mt-field">{error}</p>
   {/if}
 </div>

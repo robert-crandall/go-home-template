@@ -1,5 +1,6 @@
 <script lang="ts">
   import SignOutButton from '$lib/components/SignOutButton.svelte';
+  import ThemePicker from '$lib/components/ThemePicker.svelte';
 
   let { data } = $props();
 </script>
@@ -15,18 +16,17 @@
   a guard with no component beside it, so pages inherit a session and nothing
   else. Move `SignOutButton` into a layout of your own once you know what your
   chrome looks like.
-
-  The classes are structural and carry no colour: Tailwind's preflight resets
-  headings to body size, so with none at all this reads as one undifferentiated
-  paragraph.
 -->
-<main class="p-6">
-  <h1 class="text-2xl font-bold">Hello</h1>
-  <p class="mt-2">
+<main class="p-page">
+  <h1>Hello</h1>
+  <p class="mt-inline max-w-copy">
     You're signed in as {data.user.email}. The API and this page are served by the same Go binary on
     the same port.
   </p>
-  <div class="mt-6">
+  <div class="mt-section">
     <SignOutButton />
+  </div>
+  <div class="mt-section">
+    <ThemePicker />
   </div>
 </main>

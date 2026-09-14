@@ -1,0 +1,51 @@
+@plugin 'daisyui' {
+  themes: light --default, dark --prefersdark;
+}
+
+/* The stock dark primary pair falls below 4.5:1 for normal button text. */
+@plugin 'daisyui/theme' {
+  name: 'dark';
+  prefersdark: true;
+  color-scheme: dark;
+  --color-primary: oklch(72% 0.16 277);
+  --color-primary-content: oklch(18% 0.02 277);
+}
+
+/* The replaceable default theme. DaisyUI owns the semantic palette and
+   control states; these roles cover application layout and typography. */
+@theme {
+  --font-body: ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-body);
+  --text-body: 1rem;
+  --text-body--line-height: 1.5;
+  --text-heading: 1.5rem;
+  --text-heading--line-height: 1.25;
+  --font-weight-body: 400;
+  --font-weight-heading: 700;
+  --font-weight-control: 600;
+
+  --spacing-page: 1.5rem;
+  --spacing-section: 1.5rem;
+  --spacing-field: 1rem;
+  --spacing-label: 0.25rem;
+  --spacing-inline: 0.5rem;
+  --spacing-control-x: 0.75rem;
+  --spacing-control-y: 0.5rem;
+  --container-form: 24rem;
+  --container-copy: 70ch;
+
+  --color-muted: color-mix(in oklch, var(--color-base-content) 75%, var(--color-base-100));
+  --color-field-border: color-mix(in oklch, var(--color-base-content) 60%, var(--color-base-100));
+  --color-focus: var(--color-primary);
+  --shadow-control: none;
+  --shadow-surface: 0 1px 3px color-mix(in oklch, var(--color-base-content) 15%, transparent);
+}
+
+:root {
+  --size-control: 2.75rem;
+  --size-focus: 2px;
+  --spacing-focus: 2px;
+  --opacity-content: 1;
+  --decoration-selected: underline;
+  --spacing-selected-underline: 0.2em;
+}

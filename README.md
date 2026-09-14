@@ -182,8 +182,8 @@ the contract with `make spec`, then call that route from the tool.
 The template ships the smallest thing that proves auth works end to end:
 `/login` (log in, plus register while registration is open) and a guarded `/`
 that greets you, names the account you're signed in as, and offers **Log out**.
-There is no navigation, no theme, and no chrome of any kind - the SPA has no
-opinion about what your app looks like. That's it; the rest is yours.
+Both screens include a System/Light/Dark theme picker. There is no navigation
+or shared app shell; the default theme is replaceable. The rest is yours.
 
 Three pieces make it work, and they're all small enough to read in a sitting:
 
@@ -280,39 +280,48 @@ layout once you have one.
 
 ## Styling
 
-Tailwind 4 is wired up (`@tailwindcss/vite`, imported from `web/src/app.css`) and
-that is the whole styling layer. No component library, no theme system, no
-tokens, no `tailwind.config.js` - because a look is the one thing every app
-built on this replaces first, and something you have to delete is worse than
-nothing.
+Tailwind 4 and DaisyUI 5 provide semantic classes over CSS variables.
+**Themeability is a first-class requirement:** every app-authored visual value
+comes from semantic tokens, and a new theme must work without editing screens.
+The shipped light/dark palette is a default, not a fixed application style.
 
-One thing to know before your first page: Tailwind's preflight is on, and it
-resets every border to zero width and every form control to a transparent
-background. An `<input>` with no classes is an invisible box. That's why
-`/login` and the **Log out** button carry a few structural classes - a border,
-some padding, a rounded corner, a max width. Two classes aren't structural:
-`text-2xl font-bold` on the home page's heading, and `font-bold` on `/login`'s
-selected mode button, which is the sighted-user half of its `aria-pressed`.
-Nothing names a colour, a font family, or a breakpoint.
+`web/src/themes.css` owns theme values. It enables DaisyUI's light/dark themes
+and adds the application roles that a component library cannot choose for you:
+body/heading type, page/field spacing, readable muted text, focus, and shadows.
+`web/src/app.css` consumes those tokens in shared recipes. Components use
+`btn btn-primary`, `input`, `p-page`, `gap-field`, and similar role names.
+Structural utilities such as `flex` and `w-full` are still ordinary layout.
 
-If you want daisyUI (which is what this template shipped through M7), install it
-and add the plugin block:
+To customize or add a theme:
 
-```sh
-cd web && bun add -d daisyui
-```
+1. Edit values in `web/src/themes.css`. Use DaisyUI's
+   [`daisyui/theme` plugin](https://daisyui.com/docs/themes/) to override an
+   existing palette or define a named theme. Set both surface and content
+   colors, and override application roles under that theme's selector when
+   typography or density differs.
+2. For a new selectable theme, add its value/label to `choices` in
+   `web/static/theme.js`. The picker reads that list; no component changes are
+   needed. Do not add the test-only stress theme to that list.
+3. Run the frontend checks and exercise both screens across the supported
+   themes. Check focus, selection, disabled/pending controls, and error alerts,
+   not just the idle screen. Body text must meet 4.5:1 contrast; control
+   boundaries and focus indicators must remain distinguishable.
 
-```css
-/* web/src/app.css */
-@import 'tailwindcss';
-@plugin "daisyui" {
-  themes: light --default, dark --prefersdark;
-}
-```
+The picker saves the choice in this browser's local storage. A blocking head
+script applies it before first paint. System removes the explicit theme and
+lets CSS follow the OS, including changes while the page is open. If storage
+is blocked or full, the browser console explains why the choice cannot persist;
+switching still works for the current page. There is no server preference or
+live synchronization between tabs.
 
-D5 in [`docs/tech-stack.md`](docs/tech-stack.md) has the two things worth
-knowing before you do - where an override has to sit in the cascade to beat it,
-and the contrast floor for muted text.
+The frontend suite rejects raw palette/scale classes, inline/component styles,
+undefined recipe tokens, and opaque dynamic class expressions. It is a focused
+authoring guard, not a proof against arbitrary JavaScript or an accessibility
+audit. Extend it for actual new components and structural layout; keep visual
+values in the theme. `web/src/testing/stress-theme.css` is an unshipped fixture:
+inject its CSS into a running page, set `<html data-theme="stress">`, and check
+that fonts, spacing, radii, and shadows actually change without broken layout.
+Reload to remove it. This catches applications that only support recoloring.
 
 ## Install metadata
 
@@ -322,8 +331,8 @@ artwork - the `rsvg-convert` command is in a comment at the top of that file.
 
 The manifest deliberately declares no `theme_color` or `background_color`. Both
 are optional, and both are this template picking your installed app's title bar
-and splash screen, which is the same opinion the CSS stopped having. Add them
-back once you know your palette.
+and splash screen with fixed values that cannot follow runtime theme selection.
+Add them only when your app has an intentional install-time palette.
 
 There's deliberately no service worker, so there's no offline support and no
 service-worker-managed asset cache (ordinary HTTP caching of the hashed assets
@@ -333,9 +342,10 @@ install it unprompted, because that heuristic does still want a service worker.
 See D6 in [`docs/tech-stack.md`](docs/tech-stack.md) for why the service worker
 is the piece left out.
 
-Picking up a deploy needs no code. `index.html` is served `no-cache` and every
-script filename contains a content hash, so a cold launch fetches fresh HTML that
-points at the new build. `TestSPACacheHeaders` in `internal/app/cache_test.go`
+Picking up a deploy needs no code. `index.html` and the blocking `theme.js`
+are served `no-cache`; bundled scripts use content-hashed filenames. A cold
+launch fetches fresh HTML that points at the new build.
+`TestSPACacheHeaders` in `internal/app/cache_test.go`
 pins that, since it's the only thing holding the behaviour up.
 
 "Cold" is the load-bearing word. A client that's already running won't notice a

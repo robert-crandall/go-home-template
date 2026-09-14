@@ -68,7 +68,11 @@ There is no linter or formatter beyond `go vet` and `svelte-check`. Keep Go
 | `cmd/mcp` | MCP server, deliberately zero tools |
 | `internal/app/routes.go` | **every route is registered here**, by both entry points |
 | `internal/cicd` | no code - table-tests the shell scripts under `scripts/ci/` |
-| `web/src/lib/` | API client and auth store; no styling layer, by design |
+| `web/src/lib/` | API client, auth store, sign-out and theme picker components |
+| `web/src/themes.css` | Replaceable theme values: DaisyUI palette plus application tokens |
+| `web/src/app.css` | Token-backed component recipes and global defaults |
+| `web/static/theme.js` | Blocking theme initialization and the picker's shared preference API |
+| `web/src/testing/` | Token-contract/state tests and an unshipped stress theme |
 | `web/src/routes/(app)/` | signed-in pages; the auth guard wraps this group |
 | `web/src/**/*.test.ts` | Vitest component and unit tests |
 | `scripts/ci/` | the decisions `.github/workflows/publish.yml` and `notify.yml` make |
@@ -125,22 +129,35 @@ These are the things that waste an hour.
 - **`TEST_DATABASE_URL` unset means the DB-backed test skips**, so a green
   `make test` can mean "it did not run". To actually run it:
   `TEST_DATABASE_URL=postgres://localhost:5432/go-home-template_test?sslmode=disable go test ./internal/app/ -run TestAuthRefusalStrings`
-- **`web/src/app.css` is one `@import` and it stays that way.** No component
-  library, no theme, no tokens, no `tailwind.config.js`. Adding a house style
-  back is a regression against the point of the template, not an improvement -
-  see D5. A fork that wants daisyUI back runs `cd web && bun add -d daisyui`
-  *and* adds a `@plugin` block - the package is gone from `package.json`, so the
-  CSS on its own fails the build. D5 records the two cascade facts that bit us
-  when we shipped it.
-- **Tailwind's preflight makes an unstyled form control invisible.** It sets
-  `border: 0 solid` on `*` and `background-color: transparent` on
-  `button, input, select, textarea`, so a class-free `<input>` is a box you
-  cannot see. Both screens therefore carry a few *structural* classes: border,
-  padding and rounded corners on the controls, plus a max width on `/login`. The
-  only two that aren't structural are `text-2xl font-bold` on the home page's
-  heading and `font-bold` on `/login`'s selected mode button (the sighted-user
-  half of its `aria-pressed`). Nothing picks a colour, a font family or a
-  breakpoint. Keep new template markup to that line.
+- **Themeability is a first-class requirement.** All app-authored colors,
+  typography, spacing, radii, shadows, and visual states consume semantic
+  tokens. Concrete values belong in `web/src/themes.css`; recipes belong in
+  `web/src/app.css`. DaisyUI owns its component internals. The shipped palette
+  is a replaceable default, not a fixed style. No theme-name branches or
+  `dark:` color patches in components.
+- **Use semantic classes, not raw scales.** `btn btn-primary`, `input`,
+  `p-page`, `gap-field`, and `max-w-form` are exemplars. `p-6`,
+  `text-red-500`, `text-base-content/50`, and literal inline styles bypass the
+  contract. Structural layout (`flex`, `w-full`) is fine. The frontend suite
+  checks every Svelte component and production CSS file. Extend its small
+  structural/component allowlist for a real use case; add new visual roles to
+  the theme instead of exempting a screen. Use literal class strings,
+  conditional literal classes, or class directives so the checker can inspect
+  them; opaque dynamic classes and attribute spreads are rejected.
+- **Overrides sit directly in `@layer utilities`.** DaisyUI uses utility
+  sublayers, so `base`/`components` overrides silently lose. Unlayered CSS wins
+  too hard. Follow the control recipes already in `app.css`.
+- **Theme attributes alone prove nothing about legibility.** Exercise focus,
+  selected, disabled, loading, and error states in light/dark and with
+  `web/src/testing/stress-theme.css` injected into the running page. Set
+  `data-theme="stress"` on `<html>` after injection. Check computed typography,
+  spacing, radii and shadows, narrow layouts, and actual foreground/background
+  contrast (body text at least 4.5:1). The fixture must not ship in the bundle.
+  Component tests cover behavior; manual browser use covers rendered CSS.
+- **`theme.js` must block in the head.** Both startup and the picker use its
+  `window.appTheme` API. System removes `data-theme` so CSS follows OS changes
+  without a listener. Storage failures are warned about and the current page
+  remains switchable. The file is unhashed and must be served `no-cache`.
 - **Render conditional markup only when it is needed.** Keeping closed or
   collapsed UI in the DOM makes component assertions ambiguous and adds
   accessibility noise.

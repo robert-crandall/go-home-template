@@ -34,7 +34,7 @@ and immediately diverge.
 ```mermaid
 graph TD
   subgraph browser["Browser"]
-    SPA["Svelte 5 SPA<br/>SvelteKit + adapter-static<br/>Tailwind 4, unstyled"]
+    SPA["Svelte 5 SPA<br/>SvelteKit + adapter-static<br/>Tailwind 4 + DaisyUI, semantic themes"]
   end
 
   subgraph binary["Single Go binary (this repo)"]
@@ -66,7 +66,7 @@ graph TD
 | Frontend | Svelte + SvelteKit, `adapter-static` in SPA mode | 5.x / 2.x / 3.x |
 | Build tool | Vite | 8.x |
 | Package manager | Bun - no Node required | 1.3.x |
-| Styling | Tailwind CSS, and nothing on top of it | 4.x |
+| Styling | Tailwind CSS + DaisyUI, semantic application tokens | 4.x / 5.x |
 | API client | `openapi-typescript` + `openapi-fetch` | 7.x / 0.17.x |
 | Packaging | one static binary, SPA embedded | - |
 | Container | multi-stage build to distroless | - |
@@ -370,71 +370,54 @@ at.** SvelteKit generates `.svelte-kit/tsconfig.json`, while Vitest discovers
 tests from the explicit `src/**/*.test.ts` pattern in `vite.config.ts`. Keeping
 frontend tests under `web/src/` makes both tools see the same source tree.
 
-### D5 - Tailwind CSS 4, and deliberately nothing on top of it
+### D5 - Tailwind CSS 4 and DaisyUI 5, with replaceable semantic themes
 
-Tailwind 4 via `@tailwindcss/vite`, configured CSS-first. `web/src/app.css` is
-one `@import 'tailwindcss'` and a comment. There is no component library, no
-theme system, no design tokens, no `tailwind.config.js`, and no house style.
+**Themeability is a first-class requirement.** All app-authored colors,
+typography, spacing, radii, shadows, and visual states consume semantic design
+tokens. Themes change without component edits, and every supported theme must
+keep screens and states legible and usable. The default palette is not a fixed
+application style.
 
-**This is the decision, not an absence of one.** A template's look is the one
-part of it that every fork replaces, and anything shipped here has to be
-understood and then removed before the replacing can start. Utilities are a
-different kind of thing: `flex` and `p-4` are not an opinion about what your app
-is, they are shorthand for CSS you were going to write anyway, and a fork that
-wants none of it deletes one line from `app.css` and one plugin from
-`vite.config.ts`.
+Tailwind remains CSS-first through `@tailwindcss/vite`. `web/src/themes.css`
+enables DaisyUI's light/dark pair and defines the extra application roles:
+typography, layout spacing, muted text, focus, and shadows. DaisyUI owns its
+component internals and semantic palette. Shared recipes in `web/src/app.css`
+consume those roles; screens use semantic classes such as `btn-primary`,
+`p-page`, and `gap-field`. A numeric scale like `p-6` is not a semantic role.
 
-**What this used to be, and why it went.** Through M7 the template shipped
-daisyUI 5 for semantic component classes, a `light --default, dark --prefersdark`
-theme pair, a System/Light/Dark picker persisted in `localStorage`, a
-synchronous inline script in `app.html` that applied the saved theme before
-first paint, a `--font-sans` override, and an `outline-offset: 0` fix that
-existed only because daisyUI focuses controls with a 2px offset. All of it
-worked. All of it was also this repo deciding what your app looks like, down to
-the palette of the browser's own title bar, and every one of those pieces was
-load-bearing for the next: the inline script existed because the theme system
-did, the Go test in `web/dist_test.go` existed because the inline script did.
-Removing the top of that stack removed the rest.
+The earlier unstyled template removed DaisyUI together with the app shell.
+Those are separate decisions: a theme contract does not require a sidebar,
+navigation, or a fixed brand. DaisyUI returns; the shell does not.
 
-The same argument took `theme_color` and `background_color` out of
-`manifest.webmanifest`. Deleting a `#1e293b` meta tag from `app.html` while
-leaving the same `#1e293b` in the manifest would only move the opinion to the
-installed app's title bar and splash screen. Both members are optional;
-`name`, `icons`, `start_url`, `display` and `scope` stay, so installability is
-untouched, and `web/dist_test.go` confirms the built manifest remains valid.
+The manifest still omits `theme_color` and `background_color`: fixed install
+metadata cannot follow the runtime theme. Installability and icon coverage
+remain unchanged.
 
-**One consequence worth knowing before you write a page: preflight is on.**
-Tailwind's reset sets `border: 0 solid` on everything and
-`background-color: transparent` on form controls, so an `<input>` with no
-classes is an invisible box and a `<button>` is a word. That is Tailwind's
-default and it stays the default here - a fork that types `border` and finds no
-reset has been surprised in a worse way. What it means in practice is that the
-two screens that ship carry a handful of *structural* classes: a border, some
-padding, a rounded corner, a max width. Two classes are not structural, and both
-are carrying meaning rather than taste: `text-2xl font-bold` on the home page's
-heading, because a document with no other typography has no other way to say
-"this is the heading", and `font-bold` on `/login`'s selected mode button, which
-is the sighted-user half of the `aria-pressed` beside it - drop it and the
-toggle still announces its state to a screen reader while telling everyone else
-nothing. Beyond those, nothing in the SPA names a colour, a font family, or a
-breakpoint.
+**One theme algorithm, including first paint.** `web/static/theme.js` is a
+blocking external script in the document head. It validates the saved
+preference, applies it before paint, and exposes `window.appTheme` to the
+picker. System removes `data-theme`, leaving live OS selection to CSS. Storage
+errors produce console warnings without preventing a page-local switch.
+There is no server preference, theme engine, or live cross-tab synchronization.
+The unhashed script must revalidate; artifact and HTTP tests cover the load and
+cache contracts.
 
-**Adding a component library back is an install and a plugin block**, and
-daisyUI in particular is still the one I would reach for: it is CSS classes
-rather than components, so the markup stays plain Svelte and worst case you
-delete the plugin again. It is not in `package.json` any more, so it is
-`cd web && bun add -d daisyui` first - the CSS alone would fail the build.
+**Why DaisyUI rather than shadcn-svelte:** ordinary CSS classes keep the
+template's markup plain Svelte, and named themes are already part of the
+library. Copying a component library into every app would add maintenance
+without eliminating the need for application tokens. Neither library alone
+guarantees contrast or complete themeability.
 
-```css
-/* web/src/app.css */
-@import 'tailwindcss';
-@plugin "daisyui" {
-  themes: light --default, dark --prefersdark;
-}
-```
+**Enforcement is deliberately focused.** The frontend suite checks every
+component's classes and every production CSS recipe. It rejects raw visual
+scales/colors, inline/component styles, unknown tokens, and opaque class
+expressions. It is an authoring guard, not a JavaScript sandbox or a contrast
+proof. Component tests exercise selected, pending, disabled, and error states.
+Manual browser inspection covers real CSS in light/dark and with the unshipped
+`web/src/testing/stress-theme.css` fixture, whose different fonts, density,
+radii, and shadows expose implementations that only recolor.
 
-If you do, two things this repo learned the hard way are worth reading before
-you rediscover them. First, daisyUI nests its rules as *sublayers* of
+Two things this repo learned the hard way still apply. First, daisyUI nests its rules as *sublayers* of
 `utilities` (`@layer utilities { @layer daisyui.l1... }`), and a layer's own
 content beats its sublayers whatever the specificity - so a rule meant to
 override daisyUI has to sit directly in `@layer utilities`, where `@layer base`
@@ -494,7 +477,7 @@ element. `SignOutButton.svelte` stays its own component because the refused
 logout below is behaviour worth keeping whatever you build around it; move it
 into a layout of your own once you know what your chrome looks like.
 
-**What the SPA deliberately doesn't have:** navigation of any kind, a theme, a
+**What the SPA deliberately doesn't have:** navigation of any kind, a
 settings or account screen, breadcrumbs, page headers beyond whatever `<h1>` a
 page writes itself, a file upload demo, an API token screen, a push subscription
 UI, and a `src/routes/demo/` folder.
@@ -1386,7 +1369,7 @@ homelab template gets wrong by omission more often than by design:
   is what would turn that into a "tap to refresh" prompt.
 - **A state management library.** Svelte 5 runes plus a couple of `.svelte.ts`
   modules cover a single-user app.
-- **A component library.** See D5.
+- **A second component library or prescribed app shell.** See D5.
 - **Redis, a job queue, a worker process.** Postgres and a goroutine until
   proven otherwise.
 - **Kubernetes.** Compose on one box.

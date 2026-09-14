@@ -62,8 +62,9 @@ func TestSPACacheHeaders(t *testing.T) {
 	}
 
 	// The launch path, plus a deep link, because they are served by different
-	// branches: one is a real file, the other is the SPA fallback.
-	for _, path := range []string{"/", "/login"} {
+	// branches: one is a real file, the other is the SPA fallback. The blocking
+	// theme script has a stable name too, so it must not retain yesterday's code.
+	for _, path := range []string{"/", "/login", "/theme.js"} {
 		res, cc := get(path)
 		if res.StatusCode != http.StatusOK {
 			t.Fatalf("GET %s: status %d, want 200", path, res.StatusCode)

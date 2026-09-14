@@ -75,6 +75,63 @@ func TestIndexHTMLHasNoUnsubstitutedPlaceholders(t *testing.T) {
 	}
 }
 
+// Presence alone would pass if the script ran after the SPA or resolved to the
+// HTML fallback. Follow the real head script and require blocking execution.
+func TestThemeRunsBeforeTheApp(t *testing.T) {
+	html := readDist(t, "index.html")
+	script := regexp.MustCompile(`<script\b[^>]*src="([^"]*/theme\.js)"[^>]*></script>`)
+	match := script.FindStringSubmatchIndex(html)
+	if match == nil {
+		t.Fatal("index.html does not load theme.js")
+	}
+	tag := html[match[0]:match[1]]
+	if strings.Contains(tag, "defer") || strings.Contains(tag, "async") || strings.Contains(tag, "module") {
+		t.Fatalf("theme initialization must block first paint: %s", tag)
+	}
+	if headEnd := strings.Index(html, "</head>"); headEnd < 0 || match[0] > headEnd {
+		t.Fatal("theme initialization must be in the head")
+	}
+	if module := strings.Index(html, `type="module"`); module >= 0 && match[0] > module {
+		t.Fatal("theme initialization runs after the app")
+	}
+	path := strings.TrimPrefix(html[match[2]:match[3]], "/")
+	if source := readDist(t, path); !strings.Contains(source, "window.appTheme") {
+		t.Fatal("the built theme script does not expose the picker API")
+	}
+}
+
+// Checking source alone would miss Tailwind dropping a utility or the theme
+// variables from the shipped CSS. The stress fixture must not become a theme
+// users download just because it lives under src/.
+func TestDistIncludesSemanticStyles(t *testing.T) {
+	paths, err := fs.Glob(Dist, "_app/immutable/assets/*.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var css strings.Builder
+	for _, path := range paths {
+		css.WriteString(readDist(t, path))
+	}
+	for _, pattern := range []string{
+		`\.p-page\s*\{\s*padding:\s*var\(--spacing-page\)`,
+		`\.mt-field\s*\{\s*margin-top:\s*var\(--spacing-field\)`,
+		`\.max-w-form\s*\{\s*max-width:\s*var\(--container-form\)`,
+		`font-family:\s*var\(--font-body\)`,
+		`border-radius:\s*var\(--radius-field\)`,
+		`box-shadow:\s*var\(--shadow-control\)`,
+		`prefers-color-scheme:\s*dark`,
+		`data-theme=light`,
+		`data-theme=dark`,
+	} {
+		if !regexp.MustCompile(pattern).MatchString(css.String()) {
+			t.Errorf("built CSS is missing semantic style %s", pattern)
+		}
+	}
+	if strings.Contains(css.String(), "data-theme=stress") {
+		t.Error("the test-only stress theme was shipped")
+	}
+}
+
 // TestManifestIconsResolve is the one that earns its keep. The foundation's SPA
 // handler falls back to index.html for any path it can't open, so a typo'd icon
 // src is served as HTML with a 200: every manual check looks fine and the
