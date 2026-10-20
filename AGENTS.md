@@ -123,6 +123,9 @@ These are the things that waste an hour.
   is what stops `bun run` from honouring vite's `#!/usr/bin/env node` shebang
   and building under Node. Missing, moved, or typo'd, Bun reports no error - it
   just uses Node. CI asserts it explicitly. Do not "tidy" that file.
+- **jsdom is pinned to 30.0.1 in `web/`.** With Bun 1.3.14 and Vitest 5.0.2,
+  jsdom 30.1.1 fails before any tests run with an invalid `EventTarget` receiver.
+  Recheck `bun run test` before advancing the pin; do not switch to Node.
 - **TypeScript is held below 7 in `web/`.** TS7 drops `ts.factory`, which breaks
   both `svelte-check` and `openapi-typescript` (so it takes out `make spec`).
   Dependabot ignores `>=7.0.0` and that is the repo's only ignore.
