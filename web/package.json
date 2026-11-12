@@ -12,21 +12,21 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@sveltejs/adapter-static": "^4.0.0",
+    "@sveltejs/adapter-static": "^4.0.1",
     "@sveltejs/kit": "^2.70.3",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
-    "@tailwindcss/vite": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.5",
     "@testing-library/svelte": "^5.4.2",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.6",
     "daisyui": "^5",
     "jsdom": "30.0.1",
     "openapi-typescript": "7.13.0",
-    "svelte": "^5.57.1",
-    "svelte-check": "^4.7.6",
-    "tailwindcss": "^4.3.3",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.8",
+    "tailwindcss": "^4.3.5",
     "typescript": "^6.0.3",
-    "vite": "^8.3.1",
-    "vitest": "^5.0.2"
+    "vite": "^8.3.7",
+    "vitest": "^5.1.0"
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0"
