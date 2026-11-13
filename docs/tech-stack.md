@@ -604,12 +604,13 @@ SvelteKit re-fetch `_app/version.json` on a timer and flip `updated.current`;
 an effect in the root layout reloads on that. Two things worth writing down for
 whoever reconsiders:
 
-- Left at its default of `0`, Vite drops the timer from the bundle entirely - the
-  compiled `create_updated_store` ends up with a `clearTimeout(undefined)` and no
-  `setTimeout` at all. The only thing that re-checks by default is SvelteKit's
-  recovery path for a client-side navigation that failed to import a chunk, which
-  a PWA that never navigates will never hit. So the store existing is not
-  evidence that anything is checking.
+- With `version.pollInterval` set to `0` (overriding SvelteKit 3's 1-hour
+  default), Vite drops the timer from the bundle entirely - the
+  compiled `updated` helper ends up with a `clearTimeout(undefined)` and no
+  `setTimeout` at all. (SvelteKit 3 still checks `_app/version.json` on tab
+  focus and `visibilitychange`, plus on failed chunk imports during navigation,
+  so `updated.current` can flip without a timer, though nothing reloads on it
+  unless a layout effect opts in.)
 - `visibilitychange` alone is not a substitute for the timer. A desktop window
   that stays visible and focused never fires it.
 

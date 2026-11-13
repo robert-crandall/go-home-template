@@ -14,7 +14,10 @@ export default defineConfig({
       // (server.New panics without it). The prerendering conflict SvelteKit warns
       // about needs a route prerendered to /index.html, and nothing here
       // prerenders - ssr is off in the root layout and no route opts back in.
-      adapter: adapter({ fallback: 'index.html' })
+      adapter: adapter({ fallback: 'index.html' }),
+      version: {
+        pollInterval: 0
+      }
     })
   ],
   resolve: {
