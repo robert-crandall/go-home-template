@@ -1,6 +1,6 @@
 <script lang="ts">
-  import SignOutButton from '$lib/components/SignOutButton.svelte';
-  import ThemePicker from '$lib/components/ThemePicker.svelte';
+  import SignOutButton from '#lib/components/SignOutButton.svelte';
+  import ThemePicker from '#lib/components/ThemePicker.svelte';
 
   let { data } = $props();
 </script>

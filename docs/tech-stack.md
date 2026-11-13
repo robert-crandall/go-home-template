@@ -63,7 +63,7 @@ graph TD
 | HTTP | chi + huma (from the foundation) | - |
 | Database | Postgres, one instance | >= 14; CI tests on 18 |
 | Migrations | goose, via `db.Migrate` | - |
-| Frontend | Svelte + SvelteKit, `adapter-static` in SPA mode | 5.x / 2.x / 3.x |
+| Frontend | Svelte + SvelteKit, `adapter-static` in SPA mode | 5.x / 3.x / 4.x |
 | Build tool | Vite | 8.x |
 | Package manager | Bun - no Node required | 1.3.x |
 | Styling | Tailwind CSS + DaisyUI, semantic application tokens | 4.x / 5.x |
@@ -226,7 +226,7 @@ but don't be surprised by it.
 
 ### D4 - SvelteKit with `adapter-static`, in SPA mode
 
-Svelte 5 (runes) and SvelteKit 2, built by `@sveltejs/adapter-static` with
+Svelte 5 (runes) and SvelteKit 3, built by `@sveltejs/adapter-static` with
 `fallback: 'index.html'` and `export const ssr = false` in the root layout.
 Output goes to `web/build/`, which `web/dist.go` embeds:
 
@@ -366,7 +366,7 @@ CI asserts the runtime directly (D9) rather than inferring it from a green
 build.
 
 **A second silent trap, same shape, different cause: what `svelte-check` looks
-at.** SvelteKit generates `.svelte-kit/tsconfig.json`, while Vitest discovers
+at.** `tsconfig.json` includes `src` and `vite.config.ts`, while Vitest discovers
 tests from the explicit `src/**/*.test.ts` pattern in `vite.config.ts`. Keeping
 frontend tests under `web/src/` makes both tools see the same source tree.
 
@@ -599,17 +599,18 @@ is a real launch, but "usually" is the honest word and force-quitting is the
 reliable one.
 
 This was implemented and then removed, so the shape of the alternative is known
-rather than guessed. `version.pollInterval` in `web/svelte.config.js` makes
+rather than guessed. `version.pollInterval` in `web/vite.config.ts` makes
 SvelteKit re-fetch `_app/version.json` on a timer and flip `updated.current`;
 an effect in the root layout reloads on that. Two things worth writing down for
 whoever reconsiders:
 
-- Left at its default of `0`, Vite drops the timer from the bundle entirely - the
-  compiled `create_updated_store` ends up with a `clearTimeout(undefined)` and no
-  `setTimeout` at all. The only thing that re-checks by default is SvelteKit's
-  recovery path for a client-side navigation that failed to import a chunk, which
-  a PWA that never navigates will never hit. So the store existing is not
-  evidence that anything is checking.
+- With `version.pollInterval` set to `0` (overriding SvelteKit 3's 1-hour
+  default), Vite drops the timer from the bundle entirely - the
+  compiled `updated` helper ends up with a `clearTimeout(undefined)` and no
+  `setTimeout` at all. (SvelteKit 3 still checks `_app/version.json` on tab
+  focus and `visibilitychange`, plus on failed chunk imports during navigation,
+  so `updated.current` can flip without a timer, though nothing reloads on it
+  unless a layout effect opts in.)
 - `visibilitychange` alone is not a substitute for the timer. A desktop window
   that stays visible and focused never fires it.
 

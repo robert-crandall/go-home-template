@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import LoginPage from './+page.svelte';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$lib/api/client', () => ({ api: { POST: vi.fn(), GET: vi.fn() } }));
-vi.mock('$lib/auth.svelte', () => ({
+vi.mock('#lib/api/client.ts', () => ({ api: { POST: vi.fn(), GET: vi.fn() } }));
+vi.mock('#lib/auth.svelte.ts', () => ({
   auth: {
     user: null,
     ensure: vi.fn(),

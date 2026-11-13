@@ -1,13 +1,13 @@
 import { redirect } from '@sveltejs/kit';
-import { api } from '$lib/api/client';
-import { auth } from '$lib/auth.svelte';
+import { api } from '#lib/api/client.ts';
+import { auth } from '#lib/auth.svelte.ts';
 
 /**
  * What a Google sign-in that didn't happen looks like when the browser lands
  * back here.
  *
  * This is the one place the frontend owns error copy, and it's the exception
- * that proves $lib/api/errors' rule rather than a break with it. There is no
+ * that proves #lib/api/errors' rule rather than a break with it. There is no
  * server response to render: the foundation redirects a failed OAuth flow to
  * `/login?error=<code>` with a fixed, internal vocabulary, deliberately so that
  * Google's own error strings are never reflected back. A code is not a sentence,

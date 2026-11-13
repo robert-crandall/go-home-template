@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import { auth } from '$lib/auth.svelte';
+import { auth } from '#lib/auth.svelte.ts';
 
 /**
  * Guard the whole group, from `load` rather than from a component. SvelteKit

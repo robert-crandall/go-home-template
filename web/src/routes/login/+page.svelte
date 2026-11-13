@@ -1,9 +1,9 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { api } from '$lib/api/client';
-  import { apiErrorMessage } from '$lib/api/errors';
-  import { auth } from '$lib/auth.svelte';
-  import ThemePicker from '$lib/components/ThemePicker.svelte';
+  import { api } from '#lib/api/client.ts';
+  import { apiErrorMessage } from '#lib/api/errors.ts';
+  import { auth } from '#lib/auth.svelte.ts';
+  import ThemePicker from '#lib/components/ThemePicker.svelte';
 
   let { data } = $props();
 
@@ -38,7 +38,7 @@
       const path = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const { data, error: failure } = await api.POST(path, { body: { email, password } });
       if (failure || !data) {
-        // Whatever the server said, verbatim. See $lib/api/errors.
+        // Whatever the server said, verbatim. See #lib/api/errors.
         formError = apiErrorMessage(failure);
         return;
       }

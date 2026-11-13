@@ -1,8 +1,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { api } from '$lib/api/client';
-  import { apiErrorMessage } from '$lib/api/errors';
-  import { auth } from '$lib/auth.svelte';
+  import { api } from '#lib/api/client.ts';
+  import { apiErrorMessage } from '#lib/api/errors.ts';
+  import { auth } from '#lib/auth.svelte.ts';
 
   let busy = $state(false);
   let error = $state('');
