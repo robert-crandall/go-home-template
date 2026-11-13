@@ -1,4 +1,4 @@
-import { api, type User } from '$lib/api/client';
+import { api, type User } from '#lib/api/client.ts';
 
 /**
  * Who is signed in, according to the server.

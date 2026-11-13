@@ -5,8 +5,8 @@ import HomePage from '../routes/(app)/+page.svelte';
 
 const { post, signOut } = vi.hoisted(() => ({ post: vi.fn(), signOut: vi.fn() }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-vi.mock('$lib/api/client', () => ({ api: { POST: post } }));
-vi.mock('$lib/auth.svelte', () => ({ auth: { signedIn: vi.fn(), signOut } }));
+vi.mock('#lib/api/client.ts', () => ({ api: { POST: post } }));
+vi.mock('#lib/auth.svelte.ts', () => ({ auth: { signedIn: vi.fn(), signOut } }));
 
 // These prove behavior/semantics survive theme selection. Browser inspection of
 // the compiled CSS covers contrast and layout; jsdom cannot prove those.
